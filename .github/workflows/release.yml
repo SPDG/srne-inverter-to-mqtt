@@ -1,0 +1,58 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Build release artifacts
+        env:
+          VERSION: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          mkdir -p dist
+          for ARCH in amd64 arm64; do
+            OUTDIR="dist/srne-inverter-to-mqtt_${VERSION}_linux_${ARCH}"
+            mkdir -p "${OUTDIR}"
+            GOOS=linux GOARCH="${ARCH}" CGO_ENABLED=0 \
+              go build \
+              -ldflags "-s -w -X github.com/tomasz/srne-inverter-to-mqtt/internal/buildinfo.Version=${VERSION} -X github.com/tomasz/srne-inverter-to-mqtt/internal/buildinfo.Commit=${COMMIT} -X github.com/tomasz/srne-inverter-to-mqtt/internal/buildinfo.BuildDate=${BUILD_DATE}" \
+              -o "${OUTDIR}/srne-inverter-to-mqtt" \
+              ./cmd/srne-inverter-to-mqtt
+            cp configs/config.example.yaml "${OUTDIR}/config.example.yaml"
+            tar -C dist -czf "dist/srne-inverter-to-mqtt_${VERSION}_linux_${ARCH}.tar.gz" "$(basename "${OUTDIR}")"
+            rm -rf "${OUTDIR}"
+          done
+          (cd dist && sha256sum *.tar.gz > checksums.txt)
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/*.tar.gz dist/checksums.txt \
+            --generate-notes \
+            --title "${GITHUB_REF_NAME}"

@@ -1,0 +1,31 @@
+device:
+  name: srne-main
+  slave_id: 1
+
+serial:
+  port: /dev/ttyUSB0
+  baud_rate: 9600
+  data_bits: 8
+  parity: N
+  stop_bits: 1
+  timeout: 3s
+
+polling:
+  fast_interval: 15s
+  slow_interval: 60s
+  reconnect_delay: 5s
+
+mqtt:
+  broker: tcp://127.0.0.1:1883
+  username: ""
+  password: ""
+  client_id: srne-hive-nuc
+  topic_prefix: srne/srne-main
+  discovery_prefix: homeassistant
+  retain: true
+
+http:
+  listen: 127.0.0.1:8080
+
+logging:
+  level: info

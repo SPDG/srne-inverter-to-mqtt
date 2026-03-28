@@ -1,0 +1,14 @@
+[Unit]
+Description=SRNE Inverter to MQTT bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/srne-inverter-to-mqtt
+ExecStart=/opt/srne-inverter-to-mqtt/srne-inverter-to-mqtt --config /etc/srne-inverter-to-mqtt/config.yaml
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

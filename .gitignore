@@ -1,0 +1,12 @@
+.DS_Store
+dist/
+build/
+coverage.out
+/srne-inverter-to-mqtt
+config.local.yaml
+.tmp-*
+*.log
+!web/dist/
+!web/dist/index.html
+!web/dist/styles.css
+!web/dist/app.js
