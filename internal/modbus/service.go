@@ -40,18 +40,7 @@ func NewService(provider ConfigProvider, runtimeState *state.Store) *Service {
 
 func (s *Service) Run(ctx context.Context) error {
 	s.state.SetServiceStatus("modbus", "starting", false, "", time.Time{})
-
-	var wg sync.WaitGroup
-	for _, group := range []registers.PollGroup{registers.GroupFast, registers.GroupSlow} {
-		wg.Add(1)
-		go func(group registers.PollGroup) {
-			defer wg.Done()
-			s.pollLoop(ctx, group)
-		}(group)
-	}
-
-	<-ctx.Done()
-	wg.Wait()
+	s.pollScheduler(ctx)
 	s.close()
 	return nil
 }
@@ -143,22 +132,55 @@ func isAcknowledgeException(err error) bool {
 	return strings.Contains(err.Error(), "exception '5'")
 }
 
-func (s *Service) pollLoop(ctx context.Context, group registers.PollGroup) {
-	for {
-		s.pollGroup(group)
+func (s *Service) pollScheduler(ctx context.Context) {
+	cfg := s.provider.GetConfig()
+	now := time.Now()
+	nextFast := now
+	nextSlow := now.Add(initialSlowOffset(cfg))
 
-		cfg := s.provider.GetConfig()
-		interval := cfg.Polling.SlowInterval.Duration
-		if group == registers.GroupFast {
-			interval = cfg.Polling.FastInterval.Duration
+	for {
+		now = time.Now()
+		ran := false
+
+		if !nextFast.After(now) {
+			s.pollGroup(registers.GroupFast)
+			nextFast = time.Now().Add(s.provider.GetConfig().Polling.FastInterval.Duration)
+			ran = true
+		}
+
+		now = time.Now()
+		if !nextSlow.After(now) {
+			s.pollGroup(registers.GroupSlow)
+			nextSlow = time.Now().Add(s.provider.GetConfig().Polling.SlowInterval.Duration)
+			ran = true
+		}
+
+		if ran {
+			continue
+		}
+
+		waitFor := time.Until(nextFast)
+		if slowWait := time.Until(nextSlow); slowWait < waitFor {
+			waitFor = slowWait
+		}
+		if waitFor < 0 {
+			waitFor = 0
 		}
 
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(interval):
+		case <-time.After(waitFor):
 		}
 	}
+}
+
+func initialSlowOffset(cfg config.Config) time.Duration {
+	offset := cfg.Polling.FastInterval.Duration / 2
+	if offset <= 0 {
+		return time.Second
+	}
+	return offset
 }
 
 func (s *Service) pollGroup(group registers.PollGroup) {
@@ -173,47 +195,61 @@ func (s *Service) pollGroup(group registers.PollGroup) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	client, err := s.ensureClientLocked(cfg)
-	if err != nil {
-		s.state.SetServiceStatus("modbus", "error", false, err.Error(), time.Time{})
-		return
-	}
+	s.closeLocked()
+	defer s.closeLocked()
 
-	regs := registers.ByGroup(group)
-	values := make([]registers.DecodedValue, 0, len(regs))
+	plan := s.readPlanForGroup(group)
+	values := make([]registers.DecodedValue, 0, len(registers.ByGroup(group)))
 	errors := make([]string, 0)
 
-	for idx, reg := range regs {
-		payload, err := s.readHoldingWithRetryLocked(client, cfg, reg.Address, reg.Count)
+	for idx, readRange := range plan {
+		client, err := s.ensureClientLocked(cfg)
 		if err != nil {
-			errors = append(errors, fmt.Sprintf("0x%04X: %v", reg.Address, err))
-			if idx < len(regs)-1 {
-				time.Sleep(150 * time.Millisecond)
+			errors = append(errors, fmt.Sprintf("0x%04X/%d: %v", readRange.Start, readRange.Count, err))
+			if idx < len(plan)-1 {
+				time.Sleep(200 * time.Millisecond)
 			}
 			continue
 		}
 
-		words, err := registers.WordsFromBytes(payload, reg.Count)
+		payload, err := s.readHoldingWithRetryLocked(client, cfg, readRange.Start, readRange.Count)
+		s.closeLocked()
 		if err != nil {
-			errors = append(errors, fmt.Sprintf("0x%04X: %v", reg.Address, err))
-			if idx < len(regs)-1 {
-				time.Sleep(150 * time.Millisecond)
+			errors = append(errors, fmt.Sprintf("0x%04X/%d: %v", readRange.Start, readRange.Count, err))
+			if idx < len(plan)-1 {
+				time.Sleep(200 * time.Millisecond)
 			}
 			continue
 		}
 
-		decoded, err := reg.Decode(words[:reg.Count], now)
+		words, err := registers.WordsFromBytes(payload, readRange.Count)
 		if err != nil {
-			errors = append(errors, fmt.Sprintf("0x%04X: %v", reg.Address, err))
-			if idx < len(regs)-1 {
-				time.Sleep(150 * time.Millisecond)
+			errors = append(errors, fmt.Sprintf("0x%04X/%d: %v", readRange.Start, readRange.Count, err))
+			if idx < len(plan)-1 {
+				time.Sleep(200 * time.Millisecond)
 			}
 			continue
 		}
 
-		values = append(values, decoded)
-		if idx < len(regs)-1 {
-			time.Sleep(150 * time.Millisecond)
+		for _, reg := range readRange.Registers {
+			offset := int(reg.Address - readRange.Start)
+			end := offset + int(reg.Count)
+			if offset < 0 || end > len(words) {
+				errors = append(errors, fmt.Sprintf("0x%04X: range decode overflow", reg.Address))
+				continue
+			}
+
+			decoded, err := reg.Decode(words[offset:end], now)
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("0x%04X: %v", reg.Address, err))
+				continue
+			}
+
+			values = append(values, decoded)
+		}
+
+		if idx < len(plan)-1 {
+			time.Sleep(200 * time.Millisecond)
 		}
 	}
 
@@ -231,6 +267,13 @@ func (s *Service) pollGroup(group registers.PollGroup) {
 		errors = append(errors, "no registers configured")
 	}
 	s.state.SetServiceStatus("modbus", "error", false, strings.Join(errors, " | "), time.Time{})
+}
+
+func (s *Service) readPlanForGroup(group registers.PollGroup) []registers.ReadRange {
+	if group == registers.GroupFast {
+		return registers.BuildCriticalFastReadPlan()
+	}
+	return registers.BuildReadPlan(group)
 }
 
 func (s *Service) readHoldingWithRetryLocked(client gomodbus.Client, cfg config.Config, address, count uint16) ([]byte, error) {

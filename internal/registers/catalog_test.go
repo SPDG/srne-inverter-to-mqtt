@@ -20,6 +20,31 @@ func TestBuildReadPlanMergesContiguousRanges(t *testing.T) {
 	}
 }
 
+func TestBuildCriticalFastReadPlanUsesEssentialRanges(t *testing.T) {
+	t.Parallel()
+
+	ranges := BuildCriticalFastReadPlan()
+	if len(ranges) != 3 {
+		t.Fatalf("unexpected critical fast range count: got %d want 3", len(ranges))
+	}
+
+	expected := []struct {
+		start uint16
+		count uint16
+	}{
+		{start: 0x0100, count: 3},
+		{start: 0x0107, count: 3},
+		{start: 0x021B, count: 1},
+	}
+
+	for i, want := range expected {
+		if ranges[i].Start != want.start || ranges[i].Count != want.count {
+			t.Fatalf("range %d = {start: 0x%04X, count: %d}, want {start: 0x%04X, count: %d}",
+				i, ranges[i].Start, ranges[i].Count, want.start, want.count)
+		}
+	}
+}
+
 func TestDecodeScaledUint16(t *testing.T) {
 	t.Parallel()
 

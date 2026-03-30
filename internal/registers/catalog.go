@@ -581,19 +581,48 @@ func ByGroup(group PollGroup) []Register {
 }
 
 func BuildReadPlan(group PollGroup) []ReadRange {
-	regs := ByGroup(group)
+	return BuildReadPlanForRegisters(ByGroup(group))
+}
+
+func BuildCriticalFastReadPlan() []ReadRange {
+	critical := map[string]struct{}{
+		"battery_soc":     {},
+		"battery_voltage": {},
+		"battery_current": {},
+		"pv_voltage":      {},
+		"pv_current":      {},
+		"pv_power":        {},
+		"load_power":      {},
+	}
+
+	filtered := make([]Register, 0, len(critical))
+	for _, reg := range ByGroup(GroupFast) {
+		if _, ok := critical[reg.ID]; ok {
+			filtered = append(filtered, reg)
+		}
+	}
+
+	return BuildReadPlanForRegisters(filtered)
+}
+
+func BuildReadPlanForRegisters(regs []Register) []ReadRange {
 	if len(regs) == 0 {
 		return nil
 	}
 
+	filtered := append([]Register(nil), regs...)
+	sort.Slice(filtered, func(i, j int) bool {
+		return filtered[i].Address < filtered[j].Address
+	})
+
 	ranges := make([]ReadRange, 0)
 	current := ReadRange{
-		Start:     regs[0].Address,
-		Count:     regs[0].Count,
-		Registers: []Register{regs[0]},
+		Start:     filtered[0].Address,
+		Count:     filtered[0].Count,
+		Registers: []Register{filtered[0]},
 	}
 
-	for _, reg := range regs[1:] {
+	for _, reg := range filtered[1:] {
 		currentEnd := current.Start + current.Count
 		regEnd := reg.Address + reg.Count
 
