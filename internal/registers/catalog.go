@@ -41,6 +41,7 @@ type Register struct {
 	Component      string
 	Group          PollGroup
 	Writable       bool
+	WriteOnly      bool
 	Entity         string
 	EntityCategory string
 	Enum           map[int64]string
@@ -58,6 +59,7 @@ type DecodedValue struct {
 	Entity         string    `json:"entity"`
 	EntityCategory string    `json:"entityCategory,omitempty"`
 	Writable       bool      `json:"writable"`
+	WriteOnly      bool      `json:"writeOnly,omitempty"`
 	Unit           string    `json:"unit,omitempty"`
 	DeviceClass    string    `json:"deviceClass,omitempty"`
 	StateClass     string    `json:"stateClass,omitempty"`
@@ -494,6 +496,26 @@ func Catalog() []Register {
 			WriteStep:   0.1,
 		},
 		{
+			ID:        "reset_machine",
+			Name:      "Reset Machine",
+			Address:   0xDF01,
+			Count:     1,
+			Type:      TypeUint16,
+			Precision: 0,
+			Icon:      "mdi:restart-alert",
+			Component: "sensor",
+			Group:     GroupSlow,
+			Entity:    "config",
+			Writable:  true,
+			WriteOnly: true,
+			WriteMin:  1,
+			WriteMax:  1,
+			WriteStep: 1,
+			Enum: map[int64]string{
+				1: "Reset",
+			},
+		},
+		{
 			ID:        "charger_source_priority",
 			Name:      "Charger Source Priority",
 			Address:   0xE20F,
@@ -586,7 +608,7 @@ func ByGroup(group PollGroup) []Register {
 	catalog := Catalog()
 	filtered := make([]Register, 0, len(catalog))
 	for _, reg := range catalog {
-		if reg.Group == group {
+		if reg.Group == group && !reg.WriteOnly {
 			filtered = append(filtered, reg)
 		}
 	}
@@ -718,6 +740,7 @@ func (r Register) Decode(words []uint16, now time.Time) (DecodedValue, error) {
 		Entity:         r.Entity,
 		EntityCategory: r.EntityCategory,
 		Writable:       r.Writable,
+		WriteOnly:      r.WriteOnly,
 		Unit:           r.Unit,
 		DeviceClass:    r.DeviceClass,
 		StateClass:     r.StateClass,
@@ -752,6 +775,66 @@ func (r Register) rawValue(words []uint16) (int64, error) {
 	default:
 		return 0, fmt.Errorf("unsupported value type %s", r.Type)
 	}
+}
+
+func (r Register) ControlValue(now time.Time) DecodedValue {
+	rendered := ""
+	var value any
+	options := writeOptions(r)
+	if r.WriteOnly && len(options) == 1 {
+		rendered = options[0].Label
+		value = options[0].Label
+	}
+
+	return DecodedValue{
+		ID:             r.ID,
+		Name:           r.Name,
+		Address:        r.Address,
+		Group:          r.Group,
+		Component:      r.Component,
+		Entity:         r.Entity,
+		EntityCategory: r.EntityCategory,
+		Writable:       r.Writable,
+		WriteOnly:      r.WriteOnly,
+		Unit:           r.Unit,
+		DeviceClass:    r.DeviceClass,
+		StateClass:     r.StateClass,
+		Icon:           r.Icon,
+		Value:          value,
+		Rendered:       rendered,
+		WriteMin:       r.WriteMin,
+		WriteMax:       r.WriteMax,
+		WriteStep:      r.WriteStep,
+		Options:        options,
+		UpdatedAt:      now,
+	}
+}
+
+func MergeWriteOnlyControls(values []DecodedValue, now time.Time) []DecodedValue {
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		seen[value.ID] = struct{}{}
+	}
+
+	merged := append([]DecodedValue(nil), values...)
+	for _, reg := range Catalog() {
+		if !reg.Writable || !reg.WriteOnly {
+			continue
+		}
+		if _, ok := seen[reg.ID]; ok {
+			continue
+		}
+		merged = append(merged, reg.ControlValue(now))
+	}
+
+	sort.Slice(merged, func(i, j int) bool {
+		if merged[i].Group == merged[j].Group {
+			return merged[i].Address < merged[j].Address
+		}
+		return merged[i].Group < merged[j].Group
+	})
+
+	return merged
 }
 
 func roundFloat(value float64, precision int) float64 {

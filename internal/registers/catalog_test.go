@@ -145,6 +145,40 @@ func TestCatalogIncludesMainsChargeCurrentLimit(t *testing.T) {
 	}
 }
 
+func TestCatalogIncludesWriteOnlyResetMachine(t *testing.T) {
+	t.Parallel()
+
+	reg, ok := FindByID("reset_machine")
+	if !ok {
+		t.Fatal("reset_machine not found")
+	}
+	if !reg.Writable || !reg.WriteOnly {
+		t.Fatal("reset_machine should be writable and write-only")
+	}
+	if reg.Address != 0xDF01 {
+		t.Fatalf("unexpected address: got 0x%04X want 0xDF01", reg.Address)
+	}
+}
+
+func TestMergeWriteOnlyControlsIncludesResetMachine(t *testing.T) {
+	t.Parallel()
+
+	values := MergeWriteOnlyControls(nil, time.Unix(0, 0))
+	for _, value := range values {
+		if value.ID == "reset_machine" {
+			if !value.Writable || !value.WriteOnly {
+				t.Fatal("reset_machine control should be writable and write-only")
+			}
+			if value.Rendered != "Reset" {
+				t.Fatalf("unexpected rendered value: got %q want %q", value.Rendered, "Reset")
+			}
+			return
+		}
+	}
+
+	t.Fatal("reset_machine control not found")
+}
+
 func TestEncodeWriteEnum(t *testing.T) {
 	t.Parallel()
 

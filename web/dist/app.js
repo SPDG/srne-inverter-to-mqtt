@@ -136,6 +136,14 @@ function renderTelemetryGroup(target, items, emptyMessage, controlsOnly) {
 }
 
 function renderWriteControl(item) {
+  if (item.writeOnly && item.options?.length === 1) {
+    return `
+      <div class="telemetry-actions">
+        <button class="button secondary" data-write-button="${item.id}" data-write-value="${item.options[0].raw}" type="button">${item.options[0].label}</button>
+      </div>
+    `;
+  }
+
   if (item.options?.length) {
     const options = item.options
       .map((option) => {
@@ -176,7 +184,9 @@ function attachWriteHandlers() {
     button.addEventListener("click", async () => {
       const id = button.getAttribute("data-write-button");
       const input = document.querySelector(`[data-write-id="${id}"]`);
-      if (!input) {
+      const forcedValue = button.getAttribute("data-write-value");
+      const value = forcedValue ?? input?.value;
+      if (value == null) {
         return;
       }
 
@@ -184,7 +194,7 @@ function attachWriteHandlers() {
       try {
         await fetchJSON(`/api/v1/registers/${id}/write`, {
           method: "POST",
-          body: JSON.stringify({ value: input.value }),
+          body: JSON.stringify({ value }),
         });
         els.saveResult.textContent = `Register ${id} written.`;
         await loadStatus();

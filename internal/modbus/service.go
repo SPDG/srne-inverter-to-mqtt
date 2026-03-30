@@ -78,6 +78,11 @@ func (s *Service) WriteRegister(id string, value any) error {
 
 	if _, err := client.WriteSingleRegister(reg.Address, encoded); err != nil {
 		log.Printf("modbus write failed id=%s address=0x%04X raw=%d err=%v", reg.ID, reg.Address, encoded, err)
+		if reg.WriteOnly {
+			s.state.SetServiceStatus("modbus", "error", false, err.Error(), time.Time{})
+			return fmt.Errorf("write 0x%04X: %w", reg.Address, err)
+		}
+
 		verified, verifyErr := s.verifyWriteLocked(cfg, reg, encoded)
 		if !verified {
 			if verifyErr != nil {
@@ -92,6 +97,11 @@ func (s *Service) WriteRegister(id string, value any) error {
 	}
 
 	now := time.Now().UTC()
+	if reg.WriteOnly {
+		s.state.SetServiceStatus("modbus", "connected", true, "", now)
+		return nil
+	}
+
 	optimistic, err := reg.Decode([]uint16{encoded}, now)
 	if err != nil {
 		return err
