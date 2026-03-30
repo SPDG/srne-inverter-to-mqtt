@@ -98,23 +98,50 @@ func TestEncodeWriteNumeric(t *testing.T) {
 	t.Parallel()
 
 	reg := Register{
-		ID:        "boost_charge_voltage",
+		ID:        "pv_charge_current_setup",
 		Count:     1,
 		Type:      TypeUint16,
-		Scale:     0.2,
+		Scale:     0.1,
 		Writable:  true,
 		WriteMin:  0,
-		WriteMax:  80,
-		WriteStep: 0.2,
+		WriteMax:  100,
+		WriteStep: 0.1,
 	}
 
-	raw, err := reg.EncodeWrite("14.4")
+	raw, err := reg.EncodeWrite("60.0")
 	if err != nil {
 		t.Fatalf("EncodeWrite() error = %v", err)
 	}
 
-	if raw != 72 {
-		t.Fatalf("unexpected raw value: got %d want 72", raw)
+	if raw != 600 {
+		t.Fatalf("unexpected raw value: got %d want 600", raw)
+	}
+}
+
+func TestCatalogDisablesBatteryTypeWrite(t *testing.T) {
+	t.Parallel()
+
+	reg, ok := FindByID("battery_type")
+	if !ok {
+		t.Fatal("battery_type not found")
+	}
+	if reg.Writable {
+		t.Fatal("battery_type should not be writable")
+	}
+}
+
+func TestCatalogIncludesMainsChargeCurrentLimit(t *testing.T) {
+	t.Parallel()
+
+	reg, ok := FindByID("mains_charge_current_limit")
+	if !ok {
+		t.Fatal("mains_charge_current_limit not found")
+	}
+	if !reg.Writable {
+		t.Fatal("mains_charge_current_limit should be writable")
+	}
+	if reg.Address != 0xE205 {
+		t.Fatalf("unexpected address: got 0x%04X want 0xE205", reg.Address)
 	}
 }
 
