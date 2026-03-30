@@ -13,6 +13,8 @@ const els = {
   serviceStatus: document.getElementById("service-status"),
   statusDetails: document.getElementById("status-details"),
   controlsGrid: document.getElementById("controls-grid"),
+  maintenanceSection: document.getElementById("maintenance-section"),
+  maintenanceGrid: document.getElementById("maintenance-grid"),
   telemetryGrid: document.getElementById("telemetry-grid"),
   serialPorts: document.getElementById("serial-ports"),
   saveResult: document.getElementById("save-result"),
@@ -99,13 +101,30 @@ function renderPorts(payload) {
 }
 
 function renderTelemetry(items) {
-  const controls = items.filter((item) => item.writable);
+  const controls = items.filter((item) => item.writable && !item.writeOnly);
+  const maintenance = items.filter((item) => item.writable && item.writeOnly);
   const sensors = items.filter((item) => !item.writable);
 
   renderTelemetryGroup(els.controlsGrid, controls, "No writable settings are exposed yet.", true);
+  renderMaintenanceControls(maintenance);
   renderTelemetryGroup(els.telemetryGrid, sensors, "Waiting for Modbus data...", false);
 
   attachWriteHandlers();
+}
+
+function renderMaintenanceControls(items) {
+  if (!els.maintenanceSection || !els.maintenanceGrid) {
+    return;
+  }
+
+  if (!items.length) {
+    els.maintenanceSection.hidden = true;
+    els.maintenanceGrid.innerHTML = `<div class="telemetry-empty">No maintenance actions exposed.</div>`;
+    return;
+  }
+
+  els.maintenanceSection.hidden = false;
+  renderTelemetryGroup(els.maintenanceGrid, items, "No maintenance actions exposed.", true);
 }
 
 function renderTelemetryGroup(target, items, emptyMessage, controlsOnly) {
@@ -137,9 +156,12 @@ function renderTelemetryGroup(target, items, emptyMessage, controlsOnly) {
 
 function renderWriteControl(item) {
   if (item.writeOnly && item.options?.length === 1) {
+    const confirmMessage = confirmationMessageForControl(item);
+    const confirmAttr = confirmMessage ? ` data-confirm-message="${escapeAttribute(confirmMessage)}"` : "";
+
     return `
       <div class="telemetry-actions">
-        <button class="button secondary" data-write-button="${item.id}" data-write-value="${item.options[0].raw}" type="button">${item.options[0].label}</button>
+        <button class="button secondary" data-write-button="${item.id}" data-write-value="${item.options[0].raw}"${confirmAttr} type="button">${item.options[0].label}</button>
       </div>
     `;
   }
@@ -185,8 +207,14 @@ function attachWriteHandlers() {
       const id = button.getAttribute("data-write-button");
       const input = document.querySelector(`[data-write-id="${id}"]`);
       const forcedValue = button.getAttribute("data-write-value");
+      const confirmMessage = button.getAttribute("data-confirm-message");
       const value = forcedValue ?? input?.value;
       if (value == null) {
+        return;
+      }
+
+      if (confirmMessage && !window.confirm(confirmMessage)) {
+        els.saveResult.textContent = `Write cancelled for ${id}.`;
         return;
       }
 
@@ -203,6 +231,22 @@ function attachWriteHandlers() {
       }
     });
   });
+}
+
+function confirmationMessageForControl(item) {
+  if (item.id === "reset_machine") {
+    return "Are you sure you want to reset the inverter controller?";
+  }
+
+  return "";
+}
+
+function escapeAttribute(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 }
 
 function fillConfigForm(cfg) {

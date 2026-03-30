@@ -69,6 +69,31 @@ func TestDecodeScaledUint16(t *testing.T) {
 	}
 }
 
+func TestDecodeScaledUint32LowWordFirst(t *testing.T) {
+	t.Parallel()
+
+	reg := Register{
+		ID:        "total_load_consumption",
+		Name:      "Total Load Consumption",
+		Address:   0xF03A,
+		Count:     2,
+		Type:      TypeUint32,
+		WordOrder: WordOrderLowHigh,
+		Scale:     0.1,
+		Precision: 1,
+		Group:     GroupSlow,
+	}
+
+	value, err := reg.Decode([]uint16{0x7642, 0x0000}, time.Unix(0, 0))
+	if err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+
+	if got, ok := value.Value.(float64); !ok || got != 3027.4 {
+		t.Fatalf("unexpected decoded value: %#v", value.Value)
+	}
+}
+
 func TestDecodeEnum(t *testing.T) {
 	t.Parallel()
 
@@ -177,6 +202,59 @@ func TestMergeWriteOnlyControlsIncludesResetMachine(t *testing.T) {
 	}
 
 	t.Fatal("reset_machine control not found")
+}
+
+func TestCatalogIncludesOnePhaseLiveAndHistoryRegisters(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		id      string
+		address uint16
+		count   uint16
+	}{
+		{id: "battery_temperature", address: 0x0103, count: 1},
+		{id: "pv_total_power", address: 0x010A, count: 1},
+		{id: "load_current", address: 0x0219, count: 1},
+		{id: "grid_power", address: 0x023A, count: 1},
+		{id: "today_production", address: 0xF02F, count: 1},
+		{id: "total_production", address: 0xF038, count: 2},
+		{id: "total_energy_import", address: 0xF048, count: 2},
+	}
+
+	for _, tc := range cases {
+		reg, ok := FindByID(tc.id)
+		if !ok {
+			t.Fatalf("%s not found", tc.id)
+		}
+		if reg.Address != tc.address || reg.Count != tc.count {
+			t.Fatalf("%s = {address: 0x%04X, count: %d}, want {address: 0x%04X, count: %d}",
+				tc.id, reg.Address, reg.Count, tc.address, tc.count)
+		}
+	}
+}
+
+func TestCatalogHistoryTotalsUseLowWordFirst(t *testing.T) {
+	t.Parallel()
+
+	ids := []string{
+		"total_energy_export",
+		"total_battery_charge_ah",
+		"total_battery_discharge_ah",
+		"total_production",
+		"total_load_consumption",
+		"total_battery_grid_charge_ah",
+		"total_energy_import",
+	}
+
+	for _, id := range ids {
+		reg, ok := FindByID(id)
+		if !ok {
+			t.Fatalf("%s not found", id)
+		}
+		if reg.WordOrder != WordOrderLowHigh {
+			t.Fatalf("%s word order = %q, want %q", id, reg.WordOrder, WordOrderLowHigh)
+		}
+	}
 }
 
 func TestEncodeWriteEnum(t *testing.T) {
