@@ -40,6 +40,7 @@ type Register struct {
 	Count          uint16
 	Type           ValueType
 	WordOrder      WordOrder
+	Synthetic      bool
 	Scale          float64
 	Precision      int
 	Unit           string
@@ -928,6 +929,38 @@ func Catalog() []Register {
 			Group:       GroupSlow,
 			Entity:      "diagnostic",
 		},
+		{
+			ID:          "system_energy_losses_total",
+			Name:        "System Energy Losses Total",
+			Address:     0xFFF0,
+			Count:       0,
+			Type:        TypeUint16,
+			Synthetic:   true,
+			Scale:       1,
+			Precision:   1,
+			Unit:        "kWh",
+			DeviceClass: "energy",
+			StateClass:  "total_increasing",
+			Icon:        "mdi:transmission-tower-off",
+			Component:   "sensor",
+			Group:       GroupSlow,
+			Entity:      "diagnostic",
+		},
+		{
+			ID:        "system_energy_efficiency_total",
+			Name:      "System Energy Efficiency Total",
+			Address:   0xFFF1,
+			Count:     0,
+			Type:      TypeUint16,
+			Synthetic: true,
+			Scale:     1,
+			Precision: 1,
+			Unit:      "%",
+			Icon:      "mdi:percent-outline",
+			Component: "sensor",
+			Group:     GroupSlow,
+			Entity:    "diagnostic",
+		},
 	}
 }
 
@@ -935,7 +968,7 @@ func ByGroup(group PollGroup) []Register {
 	catalog := Catalog()
 	filtered := make([]Register, 0, len(catalog))
 	for _, reg := range catalog {
-		if reg.Group == group && !reg.WriteOnly {
+		if reg.Group == group && !reg.WriteOnly && !reg.Synthetic {
 			filtered = append(filtered, reg)
 		}
 	}

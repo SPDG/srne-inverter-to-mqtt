@@ -1,7 +1,9 @@
 package state
 
 import (
+	"math"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -77,6 +79,8 @@ func (s *Store) Snapshot() Snapshot {
 		telemetry = append(telemetry, value)
 	}
 
+	telemetry = append(telemetry, derivedTelemetry(telemetry)...)
+
 	sort.Slice(telemetry, func(i, j int) bool {
 		if telemetry[i].Group == telemetry[j].Group {
 			return telemetry[i].Address < telemetry[j].Address
@@ -88,4 +92,91 @@ func (s *Store) Snapshot() Snapshot {
 		Services:  services,
 		Telemetry: telemetry,
 	}
+}
+
+func derivedTelemetry(values []registers.DecodedValue) []registers.DecodedValue {
+	index := make(map[string]registers.DecodedValue, len(values))
+	for _, value := range values {
+		index[value.ID] = value
+	}
+
+	imported, okImport := numericValue(index["total_energy_import"])
+	consumed, okConsumed := numericValue(index["total_load_consumption"])
+	if !okImport || !okConsumed || imported <= 0 {
+		return nil
+	}
+
+	updatedAt := newestUpdatedAt(index["total_energy_import"], index["total_load_consumption"])
+	losses := roundFloat(imported-consumed, 1)
+	efficiency := roundFloat((consumed/imported)*100, 1)
+
+	return []registers.DecodedValue{
+		{
+			ID:          "system_energy_losses_total",
+			Name:        "System Energy Losses Total",
+			Address:     0xFFF0,
+			Group:       registers.GroupSlow,
+			Component:   "sensor",
+			Entity:      "diagnostic",
+			Unit:        "kWh",
+			DeviceClass: "energy",
+			StateClass:  "total_increasing",
+			Icon:        "mdi:transmission-tower-off",
+			Value:       losses,
+			Rendered:    strconv.FormatFloat(losses, 'f', 1, 64),
+			UpdatedAt:   updatedAt,
+		},
+		{
+			ID:        "system_energy_efficiency_total",
+			Name:      "System Energy Efficiency Total",
+			Address:   0xFFF1,
+			Group:     registers.GroupSlow,
+			Component: "sensor",
+			Entity:    "diagnostic",
+			Unit:      "%",
+			Icon:      "mdi:percent-outline",
+			Value:     efficiency,
+			Rendered:  strconv.FormatFloat(efficiency, 'f', 1, 64),
+			UpdatedAt: updatedAt,
+		},
+	}
+}
+
+func numericValue(value registers.DecodedValue) (float64, bool) {
+	switch typed := value.Value.(type) {
+	case float64:
+		return typed, true
+	case int:
+		return float64(typed), true
+	case int64:
+		return float64(typed), true
+	case uint64:
+		return float64(typed), true
+	case string:
+		parsed, err := strconv.ParseFloat(typed, 64)
+		if err != nil {
+			return 0, false
+		}
+		return parsed, true
+	default:
+		return 0, false
+	}
+}
+
+func newestUpdatedAt(values ...registers.DecodedValue) time.Time {
+	var newest time.Time
+	for _, value := range values {
+		if value.UpdatedAt.After(newest) {
+			newest = value.UpdatedAt
+		}
+	}
+	return newest
+}
+
+func roundFloat(value float64, precision int) float64 {
+	if precision < 0 {
+		return value
+	}
+	factor := math.Pow10(precision)
+	return math.Round(value*factor) / factor
 }
