@@ -314,13 +314,34 @@ func (s *Service) handleCommand(reg registers.Register) paho.MessageHandler {
 		}
 
 		cfg := s.provider.GetConfig()
-		if err := s.publishCurrentValue(cfg, reg.ID); err != nil {
+		if err := s.publishCommandState(cfg, reg, payload); err != nil {
 			log.Printf("mqtt state publish after command failed id=%s err=%v", reg.ID, err)
 			return
 		}
 
 		log.Printf("mqtt command applied id=%s payload=%q", reg.ID, payload)
 	}
+}
+
+func (s *Service) publishCommandState(cfg config.Config, reg registers.Register, payload string) error {
+	if reg.WriteOnly {
+		return nil
+	}
+
+	encoded, err := reg.EncodeWrite(payload)
+	if err == nil && reg.Count == 1 {
+		decoded, decodeErr := reg.Decode([]uint16{encoded}, time.Now().UTC())
+		if decodeErr == nil {
+			topic := stateTopic(cfg, reg.ID)
+			if err := s.publish(cfg, topic, decoded.Rendered, cfg.MQTT.Retain); err != nil {
+				return err
+			}
+			s.setLastPublished(topic, decoded.Rendered)
+			return nil
+		}
+	}
+
+	return s.publishCurrentValue(cfg, reg.ID)
 }
 
 func (s *Service) publishCurrentValue(cfg config.Config, registerID string) error {

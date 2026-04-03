@@ -69,6 +69,30 @@ func TestDecodeScaledUint16(t *testing.T) {
 	}
 }
 
+func TestDecodeSignedGridPowerUsesPositiveImport(t *testing.T) {
+	t.Parallel()
+
+	reg := Register{
+		ID:        "grid_power",
+		Name:      "Grid Power",
+		Address:   0x023A,
+		Count:     1,
+		Type:      TypeInt16,
+		Scale:     -1,
+		Precision: 0,
+		Group:     GroupSlow,
+	}
+
+	value, err := reg.Decode([]uint16{0xFE0C}, time.Unix(0, 0))
+	if err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+
+	if got, ok := value.Value.(int64); !ok || got != 500 {
+		t.Fatalf("unexpected decoded value: %#v", value.Value)
+	}
+}
+
 func TestDecodeScaledUint32LowWordFirst(t *testing.T) {
 	t.Parallel()
 
@@ -254,6 +278,21 @@ func TestCatalogHistoryTotalsUseLowWordFirst(t *testing.T) {
 		if reg.WordOrder != WordOrderLowHigh {
 			t.Fatalf("%s word order = %q, want %q", id, reg.WordOrder, WordOrderLowHigh)
 		}
+	}
+}
+
+func TestCatalogGridPowerUsesSignedEncoding(t *testing.T) {
+	t.Parallel()
+
+	reg, ok := FindByID("grid_power")
+	if !ok {
+		t.Fatal("grid_power not found")
+	}
+	if reg.Type != TypeInt16 {
+		t.Fatalf("grid_power type = %q, want %q", reg.Type, TypeInt16)
+	}
+	if reg.Scale != -1 {
+		t.Fatalf("grid_power scale = %v, want -1", reg.Scale)
 	}
 }
 
