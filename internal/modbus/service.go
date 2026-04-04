@@ -30,6 +30,7 @@ type Service struct {
 }
 
 const unlockRegisterAddress = 0xE203
+const maxOpenFailuresPerCycle = 2
 
 func NewService(provider ConfigProvider, runtimeState *state.Store) *Service {
 	return &Service{
@@ -205,22 +206,33 @@ func (s *Service) pollGroup(group registers.PollGroup) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// The SRNE setup on the target host proved unstable when a serial session
+	// stayed open across multiple reads. Reopening per range is intentional: it
+	// trades some overhead for a clean USB-RS485 session and measurably fewer
+	// stalled polls on flaky CH341 adapters.
 	s.closeLocked()
 	defer s.closeLocked()
 
 	plan := s.readPlanForGroup(group)
 	values := make([]registers.DecodedValue, 0, len(registers.ByGroup(group)))
 	errors := make([]string, 0)
+	openFailures := 0
 
 	for idx, readRange := range plan {
 		client, err := s.ensureClientLocked(cfg)
 		if err != nil {
+			openFailures++
 			errors = append(errors, fmt.Sprintf("0x%04X/%d: %v", readRange.Start, readRange.Count, err))
+			if openFailures >= maxOpenFailuresPerCycle {
+				errors = append(errors, "serial port could not be reopened, aborting poll cycle early")
+				break
+			}
 			if idx < len(plan)-1 {
 				time.Sleep(200 * time.Millisecond)
 			}
 			continue
 		}
+		openFailures = 0
 
 		payload, err := s.readHoldingWithRetryLocked(client, cfg, readRange.Start, readRange.Count)
 		s.closeLocked()

@@ -23,12 +23,13 @@ func TestWritableDiscoveryPayloadUsesButtonForWriteOnlySingleOption(t *testing.T
 		},
 	}
 	reg := registers.Register{
-		ID:        "reset_machine",
-		Name:      "Reset Machine",
-		Writable:  true,
-		WriteOnly: true,
-		Icon:      "mdi:restart-alert",
-		Entity:    "config",
+		ID:          "reset_machine",
+		Name:        "Reset Machine",
+		Writable:    true,
+		WriteOnly:   true,
+		ButtonClass: "restart",
+		Icon:        "mdi:restart-alert",
+		Entity:      "config",
 		Enum: map[int64]string{
 			1: "Reset",
 		},
@@ -47,6 +48,37 @@ func TestWritableDiscoveryPayloadUsesButtonForWriteOnlySingleOption(t *testing.T
 	}
 	if _, ok := payload["state_topic"]; ok {
 		t.Fatal("button payload should not define state_topic")
+	}
+}
+
+func TestWritableDiscoveryPayloadSkipsButtonClassWhenUnset(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.Config{
+		Device: config.DeviceConfig{Name: "srne-main"},
+		MQTT: config.MQTTConfig{
+			TopicPrefix: "srne/srne-main",
+		},
+	}
+	reg := registers.Register{
+		ID:        "maintenance_ping",
+		Name:      "Maintenance Ping",
+		Writable:  true,
+		WriteOnly: true,
+		Icon:      "mdi:wrench",
+		Entity:    "config",
+		Enum: map[int64]string{
+			1: "Ping",
+		},
+	}
+
+	payload, component := writableDiscoveryPayload(cfg, buildinfo.Info{Version: "test"}, "srne_main", reg)
+
+	if component != "button" {
+		t.Fatalf("component = %q, want %q", component, "button")
+	}
+	if _, ok := payload["device_class"]; ok {
+		t.Fatal("button payload should not define device_class when ButtonClass is empty")
 	}
 }
 

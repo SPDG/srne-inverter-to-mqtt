@@ -450,7 +450,9 @@ func writableDiscoveryPayload(cfg config.Config, build buildinfo.Info, deviceID 
 		if raw, ok := singleEnumRaw(reg.Enum); ok {
 			payload["payload_press"] = strconv.FormatInt(raw, 10)
 		}
-		payload["device_class"] = "restart"
+		if reg.ButtonClass != "" {
+			payload["device_class"] = reg.ButtonClass
+		}
 		return payload, "button"
 	}
 

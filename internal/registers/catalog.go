@@ -57,6 +57,7 @@ type Register struct {
 	WriteMin       float64
 	WriteMax       float64
 	WriteStep      float64
+	ButtonClass    string
 }
 
 type DecodedValue struct {
@@ -583,21 +584,22 @@ func Catalog() []Register {
 			WriteStep:   0.1,
 		},
 		{
-			ID:        "reset_machine",
-			Name:      "Reset Machine",
-			Address:   0xDF01,
-			Count:     1,
-			Type:      TypeUint16,
-			Precision: 0,
-			Icon:      "mdi:restart-alert",
-			Component: "sensor",
-			Group:     GroupSlow,
-			Entity:    "config",
-			Writable:  true,
-			WriteOnly: true,
-			WriteMin:  1,
-			WriteMax:  1,
-			WriteStep: 1,
+			ID:          "reset_machine",
+			Name:        "Reset Machine",
+			Address:     0xDF01,
+			Count:       1,
+			Type:        TypeUint16,
+			Precision:   0,
+			Icon:        "mdi:restart-alert",
+			Component:   "sensor",
+			Group:       GroupSlow,
+			Entity:      "config",
+			Writable:    true,
+			WriteOnly:   true,
+			WriteMin:    1,
+			WriteMax:    1,
+			WriteStep:   1,
+			ButtonClass: "restart",
 			Enum: map[int64]string{
 				1: "Reset",
 			},

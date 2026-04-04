@@ -296,6 +296,18 @@ func TestCatalogGridPowerUsesSignedEncoding(t *testing.T) {
 	}
 }
 
+func TestCatalogResetMachineUsesRestartButtonClass(t *testing.T) {
+	t.Parallel()
+
+	reg, ok := FindByID("reset_machine")
+	if !ok {
+		t.Fatal("reset_machine not found")
+	}
+	if reg.ButtonClass != "restart" {
+		t.Fatalf("reset_machine button class = %q, want %q", reg.ButtonClass, "restart")
+	}
+}
+
 func TestEncodeWriteEnum(t *testing.T) {
 	t.Parallel()
 
