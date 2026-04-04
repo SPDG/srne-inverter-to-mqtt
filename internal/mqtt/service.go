@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -174,42 +175,48 @@ func (s *Service) publishAvailability(cfg config.Config, payload string) error {
 func (s *Service) publishDiscovery(cfg config.Config) error {
 	deviceID := sanitizeID(cfg.Device.Name)
 	for _, reg := range s.catalog {
-		payload := map[string]any{
-			"name":               reg.Name,
-			"unique_id":          fmt.Sprintf("%s_%s", deviceID, reg.ID),
-			"state_topic":        stateTopic(cfg, reg.ID),
-			"availability_topic": availabilityTopic(cfg),
-			"icon":               reg.Icon,
-			"device": map[string]any{
-				"identifiers":  []string{deviceID},
-				"name":         cfg.Device.Name,
-				"manufacturer": "SRNE",
-				"model":        "SRNE Inverter",
-				"sw_version":   s.build.Version,
-			},
-		}
-
-		if reg.Unit != "" {
-			payload["unit_of_measurement"] = reg.Unit
-		}
-		if reg.DeviceClass != "" {
-			payload["device_class"] = reg.DeviceClass
-		}
-		if reg.StateClass != "" {
-			payload["state_class"] = reg.StateClass
-		}
-		if reg.EntityCategory != "" {
-			payload["entity_category"] = reg.EntityCategory
-		}
-
-		body, err := json.Marshal(payload)
-		if err != nil {
-			return err
-		}
-
 		sensorConfigTopic := discoveryTopic(cfg, "sensor", deviceID, reg.ID)
-		if err := s.publish(cfg, sensorConfigTopic, string(body), true); err != nil {
-			return err
+		if reg.WriteOnly {
+			if err := s.publish(cfg, sensorConfigTopic, "", true); err != nil {
+				return err
+			}
+		} else {
+			payload := map[string]any{
+				"name":               reg.Name,
+				"unique_id":          fmt.Sprintf("%s_%s", deviceID, reg.ID),
+				"state_topic":        stateTopic(cfg, reg.ID),
+				"availability_topic": availabilityTopic(cfg),
+				"icon":               reg.Icon,
+				"device": map[string]any{
+					"identifiers":  []string{deviceID},
+					"name":         cfg.Device.Name,
+					"manufacturer": "SRNE",
+					"model":        "SRNE Inverter",
+					"sw_version":   s.build.Version,
+				},
+			}
+
+			if reg.Unit != "" {
+				payload["unit_of_measurement"] = reg.Unit
+			}
+			if reg.DeviceClass != "" {
+				payload["device_class"] = reg.DeviceClass
+			}
+			if reg.StateClass != "" {
+				payload["state_class"] = reg.StateClass
+			}
+			if reg.EntityCategory != "" {
+				payload["entity_category"] = reg.EntityCategory
+			}
+
+			body, err := json.Marshal(payload)
+			if err != nil {
+				return err
+			}
+
+			if err := s.publish(cfg, sensorConfigTopic, string(body), true); err != nil {
+				return err
+			}
 		}
 
 		if !reg.Writable {
@@ -217,9 +224,18 @@ func (s *Service) publishDiscovery(cfg config.Config) error {
 		}
 
 		controlPayload, component := writableDiscoveryPayload(cfg, s.build, deviceID, reg)
-		body, err = json.Marshal(controlPayload)
+		body, err := json.Marshal(controlPayload)
 		if err != nil {
 			return err
+		}
+
+		if component == "button" {
+			// Remove stale select/number entities after changing a write-only action to a button.
+			for _, legacyComponent := range []string{"select", "number"} {
+				if err := s.publish(cfg, discoveryTopic(cfg, legacyComponent, deviceID, controlObjectID(reg)), "", true); err != nil {
+					return err
+				}
+			}
 		}
 
 		controlTopic := discoveryTopic(cfg, component, deviceID, controlObjectID(reg))
@@ -298,13 +314,34 @@ func (s *Service) handleCommand(reg registers.Register) paho.MessageHandler {
 		}
 
 		cfg := s.provider.GetConfig()
-		if err := s.publishCurrentValue(cfg, reg.ID); err != nil {
+		if err := s.publishCommandState(cfg, reg, payload); err != nil {
 			log.Printf("mqtt state publish after command failed id=%s err=%v", reg.ID, err)
 			return
 		}
 
 		log.Printf("mqtt command applied id=%s payload=%q", reg.ID, payload)
 	}
+}
+
+func (s *Service) publishCommandState(cfg config.Config, reg registers.Register, payload string) error {
+	if reg.WriteOnly {
+		return nil
+	}
+
+	encoded, err := reg.EncodeWrite(payload)
+	if err == nil && reg.Count == 1 {
+		decoded, decodeErr := reg.Decode([]uint16{encoded}, time.Now().UTC())
+		if decodeErr == nil {
+			topic := stateTopic(cfg, reg.ID)
+			if err := s.publish(cfg, topic, decoded.Rendered, cfg.MQTT.Retain); err != nil {
+				return err
+			}
+			s.setLastPublished(topic, decoded.Rendered)
+			return nil
+		}
+	}
+
+	return s.publishCurrentValue(cfg, reg.ID)
 }
 
 func (s *Service) publishCurrentValue(cfg config.Config, registerID string) error {
@@ -391,7 +428,6 @@ func writableDiscoveryPayload(cfg config.Config, build buildinfo.Info, deviceID 
 	payload := map[string]any{
 		"name":               reg.Name,
 		"unique_id":          fmt.Sprintf("%s_%s_control", deviceID, reg.ID),
-		"state_topic":        stateTopic(cfg, reg.ID),
 		"command_topic":      commandTopic(cfg, reg.ID),
 		"availability_topic": availabilityTopic(cfg),
 		"icon":               reg.Icon,
@@ -410,6 +446,18 @@ func writableDiscoveryPayload(cfg config.Config, build buildinfo.Info, deviceID 
 		payload["entity_category"] = "config"
 	}
 
+	if reg.WriteOnly && len(reg.Enum) == 1 {
+		if raw, ok := singleEnumRaw(reg.Enum); ok {
+			payload["payload_press"] = strconv.FormatInt(raw, 10)
+		}
+		if reg.ButtonClass != "" {
+			payload["device_class"] = reg.ButtonClass
+		}
+		return payload, "button"
+	}
+
+	payload["state_topic"] = stateTopic(cfg, reg.ID)
+
 	if len(reg.Enum) > 0 {
 		payload["options"] = sortedEnumOptions(reg.Enum)
 		return payload, "select"
@@ -426,6 +474,16 @@ func writableDiscoveryPayload(cfg config.Config, build buildinfo.Info, deviceID 
 	payload["step"] = reg.WriteStep
 	payload["mode"] = "box"
 	return payload, "number"
+}
+
+func singleEnumRaw(mapping map[int64]string) (int64, bool) {
+	if len(mapping) != 1 {
+		return 0, false
+	}
+	for raw := range mapping {
+		return raw, true
+	}
+	return 0, false
 }
 
 func sortedEnumOptions(mapping map[int64]string) []string {

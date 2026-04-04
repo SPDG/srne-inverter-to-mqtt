@@ -26,12 +26,21 @@ const (
 	TypeInt32  ValueType = "int32"
 )
 
+type WordOrder string
+
+const (
+	WordOrderHighLow WordOrder = "high-low"
+	WordOrderLowHigh WordOrder = "low-high"
+)
+
 type Register struct {
 	ID             string
 	Name           string
 	Address        uint16
 	Count          uint16
 	Type           ValueType
+	WordOrder      WordOrder
+	Synthetic      bool
 	Scale          float64
 	Precision      int
 	Unit           string
@@ -41,12 +50,14 @@ type Register struct {
 	Component      string
 	Group          PollGroup
 	Writable       bool
+	WriteOnly      bool
 	Entity         string
 	EntityCategory string
 	Enum           map[int64]string
 	WriteMin       float64
 	WriteMax       float64
 	WriteStep      float64
+	ButtonClass    string
 }
 
 type DecodedValue struct {
@@ -58,6 +69,7 @@ type DecodedValue struct {
 	Entity         string    `json:"entity"`
 	EntityCategory string    `json:"entityCategory,omitempty"`
 	Writable       bool      `json:"writable"`
+	WriteOnly      bool      `json:"writeOnly,omitempty"`
 	Unit           string    `json:"unit,omitempty"`
 	DeviceClass    string    `json:"deviceClass,omitempty"`
 	StateClass     string    `json:"stateClass,omitempty"`
@@ -134,6 +146,22 @@ func Catalog() []Register {
 			Entity:      "diagnostic",
 		},
 		{
+			ID:          "battery_temperature",
+			Name:        "Battery Temperature",
+			Address:     0x0103,
+			Count:       1,
+			Type:        TypeInt16,
+			Scale:       0.1,
+			Precision:   1,
+			Unit:        "°C",
+			DeviceClass: "temperature",
+			StateClass:  "measurement",
+			Icon:        "mdi:thermometer",
+			Component:   "sensor",
+			Group:       GroupSlow,
+			Entity:      "diagnostic",
+		},
+		{
 			ID:          "pv_voltage",
 			Name:        "PV Voltage",
 			Address:     0x0107,
@@ -179,6 +207,38 @@ func Catalog() []Register {
 			Icon:        "mdi:white-balance-sunny",
 			Component:   "sensor",
 			Group:       GroupFast,
+			Entity:      "diagnostic",
+		},
+		{
+			ID:          "pv_total_power",
+			Name:        "PV Total Power",
+			Address:     0x010A,
+			Count:       1,
+			Type:        TypeUint16,
+			Scale:       1,
+			Precision:   0,
+			Unit:        "W",
+			DeviceClass: "power",
+			StateClass:  "measurement",
+			Icon:        "mdi:solar-power-variant",
+			Component:   "sensor",
+			Group:       GroupSlow,
+			Entity:      "diagnostic",
+		},
+		{
+			ID:          "pv_ac_power",
+			Name:        "PV+AC Power",
+			Address:     0x010E,
+			Count:       1,
+			Type:        TypeUint16,
+			Scale:       1,
+			Precision:   0,
+			Unit:        "W",
+			DeviceClass: "power",
+			StateClass:  "measurement",
+			Icon:        "mdi:solar-power-variant",
+			Component:   "sensor",
+			Group:       GroupSlow,
 			Entity:      "diagnostic",
 		},
 		{
@@ -323,6 +383,36 @@ func Catalog() []Register {
 			Entity:      "diagnostic",
 		},
 		{
+			ID:          "load_current",
+			Name:        "Load Current",
+			Address:     0x0219,
+			Count:       1,
+			Type:        TypeUint16,
+			Scale:       0.1,
+			Precision:   1,
+			Unit:        "A",
+			DeviceClass: "current",
+			StateClass:  "measurement",
+			Icon:        "mdi:current-ac",
+			Component:   "sensor",
+			Group:       GroupSlow,
+			Entity:      "diagnostic",
+		},
+		{
+			ID:        "load_apparent_power",
+			Name:      "Load Apparent Power",
+			Address:   0x021C,
+			Count:     1,
+			Type:      TypeUint16,
+			Scale:     1,
+			Precision: 0,
+			Unit:      "VA",
+			Icon:      "mdi:flash-outline",
+			Component: "sensor",
+			Group:     GroupSlow,
+			Entity:    "diagnostic",
+		},
+		{
 			ID:        "machine_state",
 			Name:      "Machine State",
 			Address:   0x0210,
@@ -348,6 +438,25 @@ func Catalog() []Register {
 			},
 		},
 		{
+			ID:          "pv_charge_current_setup",
+			Name:        "PV Charge Current Setup",
+			Address:     0xE001,
+			Count:       1,
+			Type:        TypeUint16,
+			Scale:       0.1,
+			Precision:   1,
+			Unit:        "A",
+			DeviceClass: "current",
+			Icon:        "mdi:solar-power",
+			Component:   "sensor",
+			Group:       GroupSlow,
+			Entity:      "config",
+			Writable:    true,
+			WriteMin:    0,
+			WriteMax:    100,
+			WriteStep:   0.1,
+		},
+		{
 			ID:        "battery_type",
 			Name:      "Battery Type",
 			Address:   0xE004,
@@ -358,10 +467,6 @@ func Catalog() []Register {
 			Component: "sensor",
 			Group:     GroupSlow,
 			Entity:    "config",
-			Writable:  true,
-			WriteMin:  0,
-			WriteMax:  13,
-			WriteStep: 1,
 			Enum: map[int64]string{
 				0:  "User Defined",
 				1:  "SLD",
@@ -393,10 +498,6 @@ func Catalog() []Register {
 			Component:   "sensor",
 			Group:       GroupSlow,
 			Entity:      "config",
-			Writable:    true,
-			WriteMin:    0,
-			WriteMax:    80,
-			WriteStep:   0.2,
 		},
 		{
 			ID:          "float_charge_voltage",
@@ -412,10 +513,6 @@ func Catalog() []Register {
 			Component:   "sensor",
 			Group:       GroupSlow,
 			Entity:      "config",
-			Writable:    true,
-			WriteMin:    0,
-			WriteMax:    80,
-			WriteStep:   0.2,
 		},
 		{
 			ID:          "boost_return_voltage",
@@ -431,10 +528,6 @@ func Catalog() []Register {
 			Component:   "sensor",
 			Group:       GroupSlow,
 			Entity:      "config",
-			Writable:    true,
-			WriteMin:    0,
-			WriteMax:    80,
-			WriteStep:   0.2,
 		},
 		{
 			ID:        "boost_charging_time",
@@ -449,10 +542,6 @@ func Catalog() []Register {
 			Component: "sensor",
 			Group:     GroupSlow,
 			Entity:    "config",
-			Writable:  true,
-			WriteMin:  0,
-			WriteMax:  300,
-			WriteStep: 10,
 		},
 		{
 			ID:        "output_source_priority",
@@ -473,6 +562,46 @@ func Catalog() []Register {
 				0: "Solar",
 				1: "Utility",
 				2: "Solar, Battery, Utility",
+			},
+		},
+		{
+			ID:          "mains_charge_current_limit",
+			Name:        "Mains Charge Current Limit",
+			Address:     0xE205,
+			Count:       1,
+			Type:        TypeUint16,
+			Scale:       0.1,
+			Precision:   1,
+			Unit:        "A",
+			DeviceClass: "current",
+			Icon:        "mdi:transmission-tower",
+			Component:   "sensor",
+			Group:       GroupSlow,
+			Entity:      "config",
+			Writable:    true,
+			WriteMin:    0,
+			WriteMax:    100,
+			WriteStep:   0.1,
+		},
+		{
+			ID:          "reset_machine",
+			Name:        "Reset Machine",
+			Address:     0xDF01,
+			Count:       1,
+			Type:        TypeUint16,
+			Precision:   0,
+			Icon:        "mdi:restart-alert",
+			Component:   "sensor",
+			Group:       GroupSlow,
+			Entity:      "config",
+			Writable:    true,
+			WriteOnly:   true,
+			WriteMin:    1,
+			WriteMax:    1,
+			WriteStep:   1,
+			ButtonClass: "restart",
+			Enum: map[int64]string{
+				1: "Reset",
 			},
 		},
 		{
@@ -561,6 +690,279 @@ func Catalog() []Register {
 			Group:       GroupSlow,
 			Entity:      "diagnostic",
 		},
+		{
+			ID:          "grid_power",
+			Name:        "Grid Power",
+			Address:     0x023A,
+			Count:       1,
+			Type:        TypeInt16,
+			Scale:       -1,
+			Precision:   0,
+			Unit:        "W",
+			DeviceClass: "power",
+			StateClass:  "measurement",
+			Icon:        "mdi:transmission-tower",
+			Component:   "sensor",
+			Group:       GroupSlow,
+			Entity:      "diagnostic",
+		},
+		{
+			ID:          "today_energy_export",
+			Name:        "Today Energy Export",
+			Address:     0xF02C,
+			Count:       1,
+			Type:        TypeUint16,
+			Scale:       0.1,
+			Precision:   1,
+			Unit:        "kWh",
+			DeviceClass: "energy",
+			StateClass:  "total_increasing",
+			Icon:        "mdi:transmission-tower-import",
+			Component:   "sensor",
+			Group:       GroupSlow,
+			Entity:      "diagnostic",
+		},
+		{
+			ID:         "today_battery_charge_ah",
+			Name:       "Today Battery Charge",
+			Address:    0xF02D,
+			Count:      1,
+			Type:       TypeUint16,
+			Scale:      1,
+			Precision:  0,
+			Unit:       "Ah",
+			StateClass: "total_increasing",
+			Icon:       "mdi:battery-plus",
+			Component:  "sensor",
+			Group:      GroupSlow,
+			Entity:     "diagnostic",
+		},
+		{
+			ID:         "today_battery_discharge_ah",
+			Name:       "Today Battery Discharge",
+			Address:    0xF02E,
+			Count:      1,
+			Type:       TypeUint16,
+			Scale:      1,
+			Precision:  0,
+			Unit:       "Ah",
+			StateClass: "total_increasing",
+			Icon:       "mdi:battery-minus",
+			Component:  "sensor",
+			Group:      GroupSlow,
+			Entity:     "diagnostic",
+		},
+		{
+			ID:          "today_production",
+			Name:        "Today Production",
+			Address:     0xF02F,
+			Count:       1,
+			Type:        TypeUint16,
+			Scale:       0.1,
+			Precision:   1,
+			Unit:        "kWh",
+			DeviceClass: "energy",
+			StateClass:  "total_increasing",
+			Icon:        "mdi:solar-power",
+			Component:   "sensor",
+			Group:       GroupSlow,
+			Entity:      "diagnostic",
+		},
+		{
+			ID:          "today_load_consumption",
+			Name:        "Today Load Consumption",
+			Address:     0xF030,
+			Count:       1,
+			Type:        TypeUint16,
+			Scale:       0.1,
+			Precision:   1,
+			Unit:        "kWh",
+			DeviceClass: "energy",
+			StateClass:  "total_increasing",
+			Icon:        "mdi:home-lightning-bolt-outline",
+			Component:   "sensor",
+			Group:       GroupSlow,
+			Entity:      "diagnostic",
+		},
+		{
+			ID:          "total_energy_export",
+			Name:        "Total Energy Export",
+			Address:     0xF032,
+			Count:       2,
+			Type:        TypeUint32,
+			WordOrder:   WordOrderLowHigh,
+			Scale:       0.1,
+			Precision:   1,
+			Unit:        "kWh",
+			DeviceClass: "energy",
+			StateClass:  "total_increasing",
+			Icon:        "mdi:transmission-tower-import",
+			Component:   "sensor",
+			Group:       GroupSlow,
+			Entity:      "diagnostic",
+		},
+		{
+			ID:         "total_battery_charge_ah",
+			Name:       "Total Battery Charge",
+			Address:    0xF034,
+			Count:      2,
+			Type:       TypeUint32,
+			WordOrder:  WordOrderLowHigh,
+			Scale:      1,
+			Precision:  0,
+			Unit:       "Ah",
+			StateClass: "total_increasing",
+			Icon:       "mdi:battery-plus",
+			Component:  "sensor",
+			Group:      GroupSlow,
+			Entity:     "diagnostic",
+		},
+		{
+			ID:         "total_battery_discharge_ah",
+			Name:       "Total Battery Discharge",
+			Address:    0xF036,
+			Count:      2,
+			Type:       TypeUint32,
+			WordOrder:  WordOrderLowHigh,
+			Scale:      1,
+			Precision:  0,
+			Unit:       "Ah",
+			StateClass: "total_increasing",
+			Icon:       "mdi:battery-minus",
+			Component:  "sensor",
+			Group:      GroupSlow,
+			Entity:     "diagnostic",
+		},
+		{
+			ID:          "total_production",
+			Name:        "Total Production",
+			Address:     0xF038,
+			Count:       2,
+			Type:        TypeUint32,
+			WordOrder:   WordOrderLowHigh,
+			Scale:       0.1,
+			Precision:   1,
+			Unit:        "kWh",
+			DeviceClass: "energy",
+			StateClass:  "total_increasing",
+			Icon:        "mdi:solar-power",
+			Component:   "sensor",
+			Group:       GroupSlow,
+			Entity:      "diagnostic",
+		},
+		{
+			ID:          "total_load_consumption",
+			Name:        "Total Load Consumption",
+			Address:     0xF03A,
+			Count:       2,
+			Type:        TypeUint32,
+			WordOrder:   WordOrderLowHigh,
+			Scale:       0.1,
+			Precision:   1,
+			Unit:        "kWh",
+			DeviceClass: "energy",
+			StateClass:  "total_increasing",
+			Icon:        "mdi:home-lightning-bolt-outline",
+			Component:   "sensor",
+			Group:       GroupSlow,
+			Entity:      "diagnostic",
+		},
+		{
+			ID:         "today_battery_grid_charge_ah",
+			Name:       "Today Battery Grid Charge",
+			Address:    0xF03C,
+			Count:      1,
+			Type:       TypeUint16,
+			Scale:      1,
+			Precision:  0,
+			Unit:       "Ah",
+			StateClass: "total_increasing",
+			Icon:       "mdi:battery-plus",
+			Component:  "sensor",
+			Group:      GroupSlow,
+			Entity:     "diagnostic",
+		},
+		{
+			ID:          "today_energy_import",
+			Name:        "Today Energy Import",
+			Address:     0xF03D,
+			Count:       1,
+			Type:        TypeUint16,
+			Scale:       0.1,
+			Precision:   1,
+			Unit:        "kWh",
+			DeviceClass: "energy",
+			StateClass:  "total_increasing",
+			Icon:        "mdi:transmission-tower-export",
+			Component:   "sensor",
+			Group:       GroupSlow,
+			Entity:      "diagnostic",
+		},
+		{
+			ID:         "total_battery_grid_charge_ah",
+			Name:       "Total Battery Grid Charge",
+			Address:    0xF046,
+			Count:      2,
+			Type:       TypeUint32,
+			WordOrder:  WordOrderLowHigh,
+			Scale:      1,
+			Precision:  0,
+			Unit:       "Ah",
+			StateClass: "total_increasing",
+			Icon:       "mdi:battery-plus",
+			Component:  "sensor",
+			Group:      GroupSlow,
+			Entity:     "diagnostic",
+		},
+		{
+			ID:          "total_energy_import",
+			Name:        "Total Energy Import",
+			Address:     0xF048,
+			Count:       2,
+			Type:        TypeUint32,
+			WordOrder:   WordOrderLowHigh,
+			Scale:       0.1,
+			Precision:   1,
+			Unit:        "kWh",
+			DeviceClass: "energy",
+			StateClass:  "total_increasing",
+			Icon:        "mdi:transmission-tower-export",
+			Component:   "sensor",
+			Group:       GroupSlow,
+			Entity:      "diagnostic",
+		},
+		{
+			ID:          "system_energy_losses_total",
+			Name:        "System Energy Losses Total",
+			Address:     0xFFF0,
+			Count:       0,
+			Type:        TypeUint16,
+			Synthetic:   true,
+			Scale:       1,
+			Precision:   1,
+			Unit:        "kWh",
+			DeviceClass: "energy",
+			StateClass:  "total_increasing",
+			Icon:        "mdi:transmission-tower-off",
+			Component:   "sensor",
+			Group:       GroupSlow,
+			Entity:      "diagnostic",
+		},
+		{
+			ID:        "system_energy_efficiency_total",
+			Name:      "System Energy Efficiency Total",
+			Address:   0xFFF1,
+			Count:     0,
+			Type:      TypeUint16,
+			Synthetic: true,
+			Scale:     1,
+			Precision: 1,
+			Unit:      "%",
+			Icon:      "mdi:percent-outline",
+			Component: "sensor",
+			Group:     GroupSlow,
+			Entity:    "diagnostic",
+		},
 	}
 }
 
@@ -568,7 +970,7 @@ func ByGroup(group PollGroup) []Register {
 	catalog := Catalog()
 	filtered := make([]Register, 0, len(catalog))
 	for _, reg := range catalog {
-		if reg.Group == group {
+		if reg.Group == group && !reg.WriteOnly && !reg.Synthetic {
 			filtered = append(filtered, reg)
 		}
 	}
@@ -581,19 +983,48 @@ func ByGroup(group PollGroup) []Register {
 }
 
 func BuildReadPlan(group PollGroup) []ReadRange {
-	regs := ByGroup(group)
+	return BuildReadPlanForRegisters(ByGroup(group))
+}
+
+func BuildCriticalFastReadPlan() []ReadRange {
+	critical := map[string]struct{}{
+		"battery_soc":     {},
+		"battery_voltage": {},
+		"battery_current": {},
+		"pv_voltage":      {},
+		"pv_current":      {},
+		"pv_power":        {},
+		"load_power":      {},
+	}
+
+	filtered := make([]Register, 0, len(critical))
+	for _, reg := range ByGroup(GroupFast) {
+		if _, ok := critical[reg.ID]; ok {
+			filtered = append(filtered, reg)
+		}
+	}
+
+	return BuildReadPlanForRegisters(filtered)
+}
+
+func BuildReadPlanForRegisters(regs []Register) []ReadRange {
 	if len(regs) == 0 {
 		return nil
 	}
 
+	filtered := append([]Register(nil), regs...)
+	sort.Slice(filtered, func(i, j int) bool {
+		return filtered[i].Address < filtered[j].Address
+	})
+
 	ranges := make([]ReadRange, 0)
 	current := ReadRange{
-		Start:     regs[0].Address,
-		Count:     regs[0].Count,
-		Registers: []Register{regs[0]},
+		Start:     filtered[0].Address,
+		Count:     filtered[0].Count,
+		Registers: []Register{filtered[0]},
 	}
 
-	for _, reg := range regs[1:] {
+	for _, reg := range filtered[1:] {
 		currentEnd := current.Start + current.Count
 		regEnd := reg.Address + reg.Count
 
@@ -671,6 +1102,7 @@ func (r Register) Decode(words []uint16, now time.Time) (DecodedValue, error) {
 		Entity:         r.Entity,
 		EntityCategory: r.EntityCategory,
 		Writable:       r.Writable,
+		WriteOnly:      r.WriteOnly,
 		Unit:           r.Unit,
 		DeviceClass:    r.DeviceClass,
 		StateClass:     r.StateClass,
@@ -696,15 +1128,83 @@ func (r Register) rawValue(words []uint16) (int64, error) {
 		if len(words) < 2 {
 			return 0, fmt.Errorf("register %s needs 2 words", r.ID)
 		}
-		return int64(uint32(words[0])<<16 | uint32(words[1])), nil
+		return int64(joinWords32(words[0], words[1], r.WordOrder)), nil
 	case TypeInt32:
 		if len(words) < 2 {
 			return 0, fmt.Errorf("register %s needs 2 words", r.ID)
 		}
-		return int64(int32(uint32(words[0])<<16 | uint32(words[1]))), nil
+		return int64(int32(joinWords32(words[0], words[1], r.WordOrder))), nil
 	default:
 		return 0, fmt.Errorf("unsupported value type %s", r.Type)
 	}
+}
+
+func joinWords32(first uint16, second uint16, order WordOrder) uint32 {
+	if order == WordOrderLowHigh {
+		return uint32(second)<<16 | uint32(first)
+	}
+
+	return uint32(first)<<16 | uint32(second)
+}
+
+func (r Register) ControlValue(now time.Time) DecodedValue {
+	rendered := ""
+	var value any
+	options := writeOptions(r)
+	if r.WriteOnly && len(options) == 1 {
+		rendered = options[0].Label
+		value = options[0].Label
+	}
+
+	return DecodedValue{
+		ID:             r.ID,
+		Name:           r.Name,
+		Address:        r.Address,
+		Group:          r.Group,
+		Component:      r.Component,
+		Entity:         r.Entity,
+		EntityCategory: r.EntityCategory,
+		Writable:       r.Writable,
+		WriteOnly:      r.WriteOnly,
+		Unit:           r.Unit,
+		DeviceClass:    r.DeviceClass,
+		StateClass:     r.StateClass,
+		Icon:           r.Icon,
+		Value:          value,
+		Rendered:       rendered,
+		WriteMin:       r.WriteMin,
+		WriteMax:       r.WriteMax,
+		WriteStep:      r.WriteStep,
+		Options:        options,
+		UpdatedAt:      now,
+	}
+}
+
+func MergeWriteOnlyControls(values []DecodedValue, now time.Time) []DecodedValue {
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		seen[value.ID] = struct{}{}
+	}
+
+	merged := append([]DecodedValue(nil), values...)
+	for _, reg := range Catalog() {
+		if !reg.Writable || !reg.WriteOnly {
+			continue
+		}
+		if _, ok := seen[reg.ID]; ok {
+			continue
+		}
+		merged = append(merged, reg.ControlValue(now))
+	}
+
+	sort.Slice(merged, func(i, j int) bool {
+		if merged[i].Group == merged[j].Group {
+			return merged[i].Address < merged[j].Address
+		}
+		return merged[i].Group < merged[j].Group
+	})
+
+	return merged
 }
 
 func roundFloat(value float64, precision int) float64 {

@@ -449,6 +449,21 @@ h3 {
   color: var(--muted);
 }
 
+.maintenance-section {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+
+.maintenance-header {
+  margin-bottom: 8px;
+}
+
+.maintenance-copy {
+  margin-top: 0;
+  margin-bottom: 16px;
+}
+
 @media (max-width: 1080px) {
   .hero,
   .overview-layout,

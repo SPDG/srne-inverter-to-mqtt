@@ -11,6 +11,7 @@ import (
 
 	"github.com/tomasz/srne-inverter-to-mqtt/internal/buildinfo"
 	"github.com/tomasz/srne-inverter-to-mqtt/internal/config"
+	"github.com/tomasz/srne-inverter-to-mqtt/internal/registers"
 	"github.com/tomasz/srne-inverter-to-mqtt/internal/serialdetect"
 	"github.com/tomasz/srne-inverter-to-mqtt/internal/state"
 )
@@ -73,6 +74,7 @@ func (h *Handler) handleHealth(w http.ResponseWriter, _ *http.Request) {
 func (h *Handler) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	cfg := h.store.GetConfig()
 	snapshot := h.status.GetStateSnapshot()
+	snapshot.Telemetry = registers.MergeWriteOnlyControls(snapshot.Telemetry, time.Now().UTC())
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"build": h.build,
