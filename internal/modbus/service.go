@@ -73,6 +73,9 @@ func (s *Service) WriteRegister(id string, value any) error {
 	if err != nil {
 		return err
 	}
+	if err := s.validateWriteLocked(cfg, reg, encoded); err != nil {
+		return err
+	}
 
 	log.Printf("modbus write requested id=%s address=0x%04X raw=%d value=%v", reg.ID, reg.Address, encoded, value)
 	s.unlockBeforeWriteLocked(client)
@@ -123,6 +126,80 @@ func (s *Service) WriteRegister(id string, value any) error {
 
 	s.state.SetServiceStatus("modbus", "connected", true, "", now)
 	return nil
+}
+
+func (s *Service) validateWriteLocked(cfg config.Config, reg registers.Register, encoded uint16) error {
+	switch reg.ID {
+	case "battery_discharge_stop":
+		startValue, err := s.currentRegisterRawLocked(cfg, "battery_discharge_start")
+		if err != nil {
+			return err
+		}
+		if encoded > startValue {
+			return fmt.Errorf("battery_discharge_stop must be less than or equal to battery_discharge_start (%d%%)", startValue)
+		}
+	case "battery_discharge_start":
+		stopValue, err := s.currentRegisterRawLocked(cfg, "battery_discharge_stop")
+		if err != nil {
+			return err
+		}
+		if encoded < stopValue {
+			return fmt.Errorf("battery_discharge_start must be greater than or equal to battery_discharge_stop (%d%%)", stopValue)
+		}
+	}
+
+	return nil
+}
+
+func (s *Service) currentRegisterRawLocked(cfg config.Config, id string) (uint16, error) {
+	if value, ok := rawFromSnapshot(s.state.Snapshot(), id); ok {
+		return value, nil
+	}
+
+	reg, ok := registers.FindByID(id)
+	if !ok {
+		return 0, fmt.Errorf("unknown register %q", id)
+	}
+
+	client, err := s.ensureClientLocked(cfg)
+	if err != nil {
+		return 0, err
+	}
+
+	payload, err := s.readHoldingWithRetryLocked(client, cfg, reg.Address, reg.Count)
+	if err != nil {
+		return 0, err
+	}
+
+	words, err := registers.WordsFromBytes(payload, reg.Count)
+	if err != nil {
+		return 0, err
+	}
+
+	decoded, err := reg.Decode(words[:reg.Count], time.Now().UTC())
+	if err != nil {
+		return 0, err
+	}
+
+	if decoded.Raw < 0 || decoded.Raw > int64(^uint16(0)) {
+		return 0, fmt.Errorf("register %s raw value %d is out of uint16 range", reg.ID, decoded.Raw)
+	}
+
+	return uint16(decoded.Raw), nil
+}
+
+func rawFromSnapshot(snapshot state.Snapshot, id string) (uint16, bool) {
+	for _, value := range snapshot.Telemetry {
+		if value.ID != id {
+			continue
+		}
+		if value.Raw < 0 || value.Raw > int64(^uint16(0)) {
+			return 0, false
+		}
+		return uint16(value.Raw), true
+	}
+
+	return 0, false
 }
 
 func (s *Service) unlockBeforeWriteLocked(client gomodbus.Client) {
