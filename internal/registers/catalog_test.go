@@ -327,6 +327,37 @@ func TestCatalogResetMachineUsesRestartButtonClass(t *testing.T) {
 	}
 }
 
+func TestCatalogIncludesLastSourceSwitchSyntheticSensors(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		id          string
+		address     uint16
+		deviceClass string
+	}{
+		{id: "last_switch_to_grid_at", address: 0xFFF2, deviceClass: "timestamp"},
+		{id: "last_switch_to_grid_soc", address: 0xFFF3, deviceClass: "battery"},
+		{id: "last_switch_to_battery_at", address: 0xFFF4, deviceClass: "timestamp"},
+		{id: "last_switch_to_battery_soc", address: 0xFFF5, deviceClass: "battery"},
+	}
+
+	for _, tc := range cases {
+		reg, ok := FindByID(tc.id)
+		if !ok {
+			t.Fatalf("%s not found", tc.id)
+		}
+		if !reg.Synthetic {
+			t.Fatalf("%s should be synthetic", tc.id)
+		}
+		if reg.Address != tc.address {
+			t.Fatalf("%s address = 0x%04X, want 0x%04X", tc.id, reg.Address, tc.address)
+		}
+		if reg.DeviceClass != tc.deviceClass {
+			t.Fatalf("%s device class = %q, want %q", tc.id, reg.DeviceClass, tc.deviceClass)
+		}
+	}
+}
+
 func TestEncodeWriteEnum(t *testing.T) {
 	t.Parallel()
 
