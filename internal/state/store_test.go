@@ -92,3 +92,121 @@ func TestSnapshotSkipsDerivedMetricsWithoutTotals(t *testing.T) {
 		}
 	}
 }
+
+func TestSnapshotIncludesLastSourceSwitchEvents(t *testing.T) {
+	t.Parallel()
+
+	store := New()
+	batteryAt := time.Unix(1711929000, 0).UTC()
+	gridAt := batteryAt.Add(15 * time.Minute)
+
+	store.UpsertTelemetry([]registers.DecodedValue{
+		{
+			ID:        "battery_soc",
+			Address:   0x0100,
+			Group:     registers.GroupFast,
+			Component: "sensor",
+			Entity:    "diagnostic",
+			Unit:      "%",
+			Value:     36.0,
+			Rendered:  "36",
+			UpdatedAt: batteryAt.Add(-5 * time.Minute),
+		},
+		{
+			ID:        "machine_state",
+			Address:   0x0210,
+			Group:     registers.GroupSlow,
+			Component: "sensor",
+			Entity:    "diagnostic",
+			Value:     "AC Power Operation",
+			Rendered:  "AC Power Operation",
+			UpdatedAt: batteryAt.Add(-5 * time.Minute),
+		},
+	})
+
+	store.UpsertTelemetry([]registers.DecodedValue{
+		{
+			ID:        "battery_soc",
+			Address:   0x0100,
+			Group:     registers.GroupFast,
+			Component: "sensor",
+			Entity:    "diagnostic",
+			Unit:      "%",
+			Value:     35.0,
+			Rendered:  "35",
+			UpdatedAt: batteryAt,
+		},
+		{
+			ID:        "machine_state",
+			Address:   0x0210,
+			Group:     registers.GroupSlow,
+			Component: "sensor",
+			Entity:    "diagnostic",
+			Value:     "Inverter Operation",
+			Rendered:  "Inverter Operation",
+			UpdatedAt: batteryAt,
+		},
+	})
+
+	store.UpsertTelemetry([]registers.DecodedValue{
+		{
+			ID:        "battery_soc",
+			Address:   0x0100,
+			Group:     registers.GroupFast,
+			Component: "sensor",
+			Entity:    "diagnostic",
+			Unit:      "%",
+			Value:     25.0,
+			Rendered:  "25",
+			UpdatedAt: gridAt,
+		},
+		{
+			ID:        "machine_state",
+			Address:   0x0210,
+			Group:     registers.GroupSlow,
+			Component: "sensor",
+			Entity:    "diagnostic",
+			Value:     "AC Power Operation",
+			Rendered:  "AC Power Operation",
+			UpdatedAt: gridAt,
+		},
+	})
+
+	snapshot := store.Snapshot()
+	values := make(map[string]registers.DecodedValue, len(snapshot.Telemetry))
+	for _, value := range snapshot.Telemetry {
+		values[value.ID] = value
+	}
+
+	lastGridAt, ok := values["last_switch_to_grid_at"]
+	if !ok {
+		t.Fatal("last_switch_to_grid_at not found")
+	}
+	if got, ok := lastGridAt.Value.(string); !ok || got != gridAt.Format(time.RFC3339) {
+		t.Fatalf("unexpected last_switch_to_grid_at value: %#v", lastGridAt.Value)
+	}
+
+	lastGridSOC, ok := values["last_switch_to_grid_soc"]
+	if !ok {
+		t.Fatal("last_switch_to_grid_soc not found")
+	}
+	if got, ok := lastGridSOC.Value.(float64); !ok || got != 25 {
+		t.Fatalf("unexpected last_switch_to_grid_soc value: %#v", lastGridSOC.Value)
+	}
+
+	lastBatteryAt, ok := values["last_switch_to_battery_at"]
+	if !ok {
+		t.Fatal("last_switch_to_battery_at not found")
+	}
+	if got, ok := lastBatteryAt.Value.(string); !ok || got != batteryAt.Format(time.RFC3339) {
+		t.Fatalf("unexpected last_switch_to_battery_at value: %#v", lastBatteryAt.Value)
+	}
+
+	lastBatterySOC, ok := values["last_switch_to_battery_soc"]
+	if !ok {
+		t.Fatal("last_switch_to_battery_soc not found")
+	}
+	if got, ok := lastBatterySOC.Value.(float64); !ok || got != 35 {
+		t.Fatalf("unexpected last_switch_to_battery_soc value: %#v", lastBatterySOC.Value)
+	}
+}

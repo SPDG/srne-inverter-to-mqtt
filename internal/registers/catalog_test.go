@@ -243,6 +243,8 @@ func TestCatalogIncludesOnePhaseLiveAndHistoryRegisters(t *testing.T) {
 		{id: "today_production", address: 0xF02F, count: 1},
 		{id: "total_production", address: 0xF038, count: 2},
 		{id: "total_energy_import", address: 0xF048, count: 2},
+		{id: "battery_discharge_stop", address: 0xE01F, count: 1},
+		{id: "battery_discharge_start", address: 0xE020, count: 1},
 	}
 
 	for _, tc := range cases {
@@ -253,6 +255,23 @@ func TestCatalogIncludesOnePhaseLiveAndHistoryRegisters(t *testing.T) {
 		if reg.Address != tc.address || reg.Count != tc.count {
 			t.Fatalf("%s = {address: 0x%04X, count: %d}, want {address: 0x%04X, count: %d}",
 				tc.id, reg.Address, reg.Count, tc.address, tc.count)
+		}
+	}
+}
+
+func TestCatalogIncludesWritableBatteryDischargeThresholds(t *testing.T) {
+	t.Parallel()
+
+	for _, id := range []string{"battery_discharge_stop", "battery_discharge_start"} {
+		reg, ok := FindByID(id)
+		if !ok {
+			t.Fatalf("%s not found", id)
+		}
+		if !reg.Writable {
+			t.Fatalf("%s should be writable", id)
+		}
+		if reg.WriteMin != 0 || reg.WriteMax != 100 || reg.WriteStep != 1 {
+			t.Fatalf("%s write bounds = [%v,%v] step %v, want [0,100] step 1", id, reg.WriteMin, reg.WriteMax, reg.WriteStep)
 		}
 	}
 }
@@ -305,6 +324,37 @@ func TestCatalogResetMachineUsesRestartButtonClass(t *testing.T) {
 	}
 	if reg.ButtonClass != "restart" {
 		t.Fatalf("reset_machine button class = %q, want %q", reg.ButtonClass, "restart")
+	}
+}
+
+func TestCatalogIncludesLastSourceSwitchSyntheticSensors(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		id          string
+		address     uint16
+		deviceClass string
+	}{
+		{id: "last_switch_to_grid_at", address: 0xFFF2, deviceClass: "timestamp"},
+		{id: "last_switch_to_grid_soc", address: 0xFFF3, deviceClass: "battery"},
+		{id: "last_switch_to_battery_at", address: 0xFFF4, deviceClass: "timestamp"},
+		{id: "last_switch_to_battery_soc", address: 0xFFF5, deviceClass: "battery"},
+	}
+
+	for _, tc := range cases {
+		reg, ok := FindByID(tc.id)
+		if !ok {
+			t.Fatalf("%s not found", tc.id)
+		}
+		if !reg.Synthetic {
+			t.Fatalf("%s should be synthetic", tc.id)
+		}
+		if reg.Address != tc.address {
+			t.Fatalf("%s address = 0x%04X, want 0x%04X", tc.id, reg.Address, tc.address)
+		}
+		if reg.DeviceClass != tc.deviceClass {
+			t.Fatalf("%s device class = %q, want %q", tc.id, reg.DeviceClass, tc.deviceClass)
+		}
 	}
 }
 
