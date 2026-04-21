@@ -30,12 +30,15 @@ type Service struct {
 	build    buildinfo.Info
 	catalog  []registers.Register
 
-	mu            sync.Mutex
-	key           string
-	client        paho.Client
-	discoveryKey  string
-	lastPublished map[string]string
+	mu             sync.Mutex
+	key            string
+	client         paho.Client
+	discoveryKey   string
+	lastPublished  map[string]string
+	unhealthySince time.Time
 }
+
+const mqttClientResetAfter = 2 * time.Minute
 
 func NewService(provider ConfigProvider, runtimeState *state.Store, build buildinfo.Info) *Service {
 	return &Service{
@@ -80,49 +83,90 @@ func (s *Service) sync() {
 	}
 
 	if !client.IsConnectionOpen() {
+		stalledFor := s.markUnhealthy(time.Now().UTC())
+		if stalledFor >= mqttClientResetAfter {
+			s.resetClient(fmt.Sprintf("connection not open for %s", stalledFor.Round(time.Second)), client)
+		}
 		s.state.SetServiceStatus("mqtt", "connecting", false, "", time.Time{})
 		return
 	}
 
 	if err := s.publishAvailability(cfg, "online"); err != nil {
-		s.state.SetServiceStatus("mqtt", "error", false, err.Error(), time.Time{})
+		s.recordError("publish availability", err)
 		return
 	}
 
 	if s.discoveryKey != mqttKey(cfg) {
 		if err := s.publishDiscovery(cfg); err != nil {
-			s.state.SetServiceStatus("mqtt", "error", false, err.Error(), time.Time{})
+			s.recordError("publish discovery", err)
 			return
 		}
 		s.discoveryKey = mqttKey(cfg)
 	}
 
 	if err := s.publishTelemetry(cfg); err != nil {
-		s.state.SetServiceStatus("mqtt", "error", false, err.Error(), time.Time{})
+		s.recordError("publish telemetry", err)
 		return
 	}
 
+	s.markHealthy()
 	s.state.SetServiceStatus("mqtt", "connected", true, "", time.Now().UTC())
 }
 
 func (s *Service) ensureClient(cfg config.Config) paho.Client {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	key := mqttKey(cfg)
+
+	s.mu.Lock()
 	if s.client != nil && s.key == key {
-		return s.client
+		client := s.client
+		s.mu.Unlock()
+		return client
 	}
 
-	if s.client != nil {
-		s.client.Disconnect(250)
+	oldClient := s.client
+	s.client = nil
+	s.key = ""
+	s.discoveryKey = ""
+	s.lastPublished = make(map[string]string)
+	s.unhealthySince = time.Time{}
+	s.mu.Unlock()
+
+	if oldClient != nil {
+		oldClient.Disconnect(250)
 	}
 
+	client := paho.NewClient(s.clientOptions(cfg))
+
+	s.mu.Lock()
+	s.client = client
+	s.key = key
+	s.discoveryKey = ""
+	s.lastPublished = make(map[string]string)
+	s.unhealthySince = time.Now().UTC()
+	s.mu.Unlock()
+
+	token := client.Connect()
+	if ok := token.WaitTimeout(5 * time.Second); !ok {
+		err := fmt.Errorf("mqtt connect timeout")
+		s.state.SetServiceStatus("mqtt", "error", false, err.Error(), time.Time{})
+		s.resetClient(err.Error(), client)
+		return nil
+	}
+	if err := token.Error(); err != nil {
+		s.state.SetServiceStatus("mqtt", "error", false, err.Error(), time.Time{})
+		s.resetClient(fmt.Sprintf("connect failed: %v", err), client)
+		return nil
+	}
+
+	return client
+}
+
+func (s *Service) clientOptions(cfg config.Config) *paho.ClientOptions {
 	opts := paho.NewClientOptions().
 		AddBroker(cfg.MQTT.Broker).
 		SetClientID(cfg.MQTT.ClientID).
 		SetAutoReconnect(true).
-		SetConnectRetry(true).
+		SetConnectRetry(false).
 		SetConnectTimeout(3 * time.Second).
 		SetConnectRetryInterval(5 * time.Second).
 		SetOrderMatters(false).
@@ -142,30 +186,19 @@ func (s *Service) ensureClient(cfg config.Config) paho.Client {
 		if err := s.subscribeCommands(client, cfg); err != nil {
 			log.Printf("mqtt subscribe failed: %v", err)
 			s.state.SetServiceStatus("mqtt", "error", false, err.Error(), time.Time{})
+			s.markUnhealthy(time.Now().UTC())
+			go s.resetClient(fmt.Sprintf("subscribe failed: %v", err), client)
 			return
 		}
+		s.markHealthy()
 		s.state.SetServiceStatus("mqtt", "connected", true, "", time.Now().UTC())
 	}
 	opts.OnConnectionLost = func(_ paho.Client, err error) {
+		s.markUnhealthy(time.Now().UTC())
 		s.state.SetServiceStatus("mqtt", "error", false, err.Error(), time.Time{})
 	}
 
-	client := paho.NewClient(opts)
-	token := client.Connect()
-	if ok := token.WaitTimeout(5 * time.Second); !ok {
-		s.state.SetServiceStatus("mqtt", "error", false, "mqtt connect timeout", time.Time{})
-		return nil
-	}
-	if err := token.Error(); err != nil {
-		s.state.SetServiceStatus("mqtt", "error", false, err.Error(), time.Time{})
-		return nil
-	}
-
-	s.client = client
-	s.key = key
-	s.discoveryKey = ""
-	s.lastPublished = make(map[string]string)
-	return s.client
+	return opts
 }
 
 func (s *Service) publishAvailability(cfg config.Config, payload string) error {
@@ -281,19 +314,36 @@ func (s *Service) publish(cfg config.Config, topic, payload string, retained boo
 }
 
 func (s *Service) subscribeCommands(client paho.Client, cfg config.Config) error {
+	subscriptions := make(map[string]byte)
+	routes := make(map[string]registers.Register)
+
 	for _, reg := range s.catalog {
 		if !reg.Writable {
 			continue
 		}
 
 		topic := commandTopic(cfg, reg.ID)
-		token := client.Subscribe(topic, 0, s.handleCommand(reg))
-		if ok := token.WaitTimeout(10 * time.Second); !ok {
-			return fmt.Errorf("mqtt subscribe timeout for %s", topic)
+		subscriptions[topic] = 0
+		routes[topic] = reg
+	}
+
+	if len(subscriptions) == 0 {
+		return nil
+	}
+
+	token := client.SubscribeMultiple(subscriptions, func(_ paho.Client, msg paho.Message) {
+		reg, ok := routes[msg.Topic()]
+		if !ok {
+			log.Printf("mqtt command ignored topic=%s reason=unknown-topic", msg.Topic())
+			return
 		}
-		if err := token.Error(); err != nil {
-			return fmt.Errorf("mqtt subscribe %s: %w", topic, err)
-		}
+		s.handleCommand(reg)(client, msg)
+	})
+	if ok := token.WaitTimeout(10 * time.Second); !ok {
+		return fmt.Errorf("mqtt subscribe timeout for command topics")
+	}
+	if err := token.Error(); err != nil {
+		return fmt.Errorf("mqtt subscribe command topics: %w", err)
 	}
 
 	return nil
@@ -371,6 +421,7 @@ func (s *Service) disconnect() {
 	s.key = ""
 	s.discoveryKey = ""
 	s.lastPublished = make(map[string]string)
+	s.unhealthySince = time.Time{}
 	s.mu.Unlock()
 
 	if client != nil && client.IsConnectionOpen() {
@@ -378,6 +429,56 @@ func (s *Service) disconnect() {
 		token.WaitTimeout(3 * time.Second)
 		client.Disconnect(250)
 	}
+}
+
+func (s *Service) recordError(context string, err error) {
+	stalledFor := s.markUnhealthy(time.Now().UTC())
+	s.state.SetServiceStatus("mqtt", "error", false, err.Error(), time.Time{})
+	if stalledFor < mqttClientResetAfter {
+		return
+	}
+
+	s.resetClient(fmt.Sprintf("%s failed for %s: %v", context, stalledFor.Round(time.Second), err), nil)
+}
+
+func (s *Service) markHealthy() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.unhealthySince = time.Time{}
+}
+
+func (s *Service) markUnhealthy(now time.Time) time.Duration {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.unhealthySince.IsZero() {
+		s.unhealthySince = now
+		return 0
+	}
+
+	return now.Sub(s.unhealthySince)
+}
+
+func (s *Service) resetClient(reason string, expected paho.Client) {
+	s.mu.Lock()
+	client := s.client
+	if expected != nil && client != expected {
+		s.mu.Unlock()
+		expected.Disconnect(250)
+		return
+	}
+
+	s.client = nil
+	s.key = ""
+	s.discoveryKey = ""
+	s.lastPublished = make(map[string]string)
+	s.unhealthySince = time.Now().UTC()
+	s.mu.Unlock()
+
+	if client != nil {
+		client.Disconnect(250)
+	}
+	log.Printf("mqtt client reset reason=%q", reason)
 }
 
 func mqttKey(cfg config.Config) string {
