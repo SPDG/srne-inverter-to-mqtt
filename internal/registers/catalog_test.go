@@ -358,6 +358,35 @@ func TestCatalogIncludesLastSourceSwitchSyntheticSensors(t *testing.T) {
 	}
 }
 
+func TestCatalogIncludesBatteryEnergyEstimateSyntheticSensors(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		id      string
+		address uint16
+	}{
+		{id: "battery_charge_energy_total_estimate", address: 0xFFF6},
+		{id: "battery_discharge_energy_total_estimate", address: 0xFFF7},
+	}
+
+	for _, tc := range cases {
+		reg, ok := FindByID(tc.id)
+		if !ok {
+			t.Fatalf("%s not found", tc.id)
+		}
+		if !reg.Synthetic {
+			t.Fatalf("%s should be synthetic", tc.id)
+		}
+		if reg.Address != tc.address {
+			t.Fatalf("%s address = 0x%04X, want 0x%04X", tc.id, reg.Address, tc.address)
+		}
+		if reg.DeviceClass != "energy" || reg.StateClass != "total_increasing" || reg.Unit != "kWh" {
+			t.Fatalf("%s metadata = {deviceClass:%q stateClass:%q unit:%q}, want energy total_increasing kWh",
+				tc.id, reg.DeviceClass, reg.StateClass, reg.Unit)
+		}
+	}
+}
+
 func TestEncodeWriteEnum(t *testing.T) {
 	t.Parallel()
 

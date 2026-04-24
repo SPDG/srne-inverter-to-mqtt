@@ -4,6 +4,7 @@ import (
 	"math"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -122,7 +123,7 @@ func derivedTelemetry(values []registers.DecodedValue, lastSwitchGrid, lastSwitc
 		index[value.ID] = value
 	}
 
-	derived := make([]registers.DecodedValue, 0, 6)
+	derived := make([]registers.DecodedValue, 0, 8)
 
 	imported, okImport := numericValue(index["total_energy_import"])
 	consumed, okConsumed := numericValue(index["total_load_consumption"])
@@ -163,6 +164,8 @@ func derivedTelemetry(values []registers.DecodedValue, lastSwitchGrid, lastSwitc
 		)
 	}
 
+	derived = append(derived, batteryEnergyTelemetry(index)...)
+
 	derived = append(derived, switchTelemetry(
 		"last_switch_to_grid_at",
 		"Last Switch To Grid At",
@@ -193,6 +196,96 @@ func derivedTelemetry(values []registers.DecodedValue, lastSwitchGrid, lastSwitc
 	)...)
 
 	return derived
+}
+
+func batteryEnergyTelemetry(index map[string]registers.DecodedValue) []registers.DecodedValue {
+	nominalVoltage, ok := nominalBatteryVoltage(index["battery_type"])
+	if !ok {
+		return nil
+	}
+
+	chargedAh, okCharge := numericValue(index["total_battery_charge_ah"])
+	dischargedAh, okDischarge := numericValue(index["total_battery_discharge_ah"])
+	if !okCharge && !okDischarge {
+		return nil
+	}
+
+	derived := make([]registers.DecodedValue, 0, 2)
+	if okCharge {
+		derived = append(derived, batteryEnergyValue(
+			"battery_charge_energy_total_estimate",
+			"Battery Charge Energy Total Estimate",
+			0xFFF6,
+			"mdi:battery-plus",
+			chargedAh,
+			nominalVoltage,
+			index["total_battery_charge_ah"].UpdatedAt,
+		))
+	}
+	if okDischarge {
+		derived = append(derived, batteryEnergyValue(
+			"battery_discharge_energy_total_estimate",
+			"Battery Discharge Energy Total Estimate",
+			0xFFF7,
+			"mdi:battery-minus",
+			dischargedAh,
+			nominalVoltage,
+			index["total_battery_discharge_ah"].UpdatedAt,
+		))
+	}
+
+	return derived
+}
+
+func batteryEnergyValue(id, name string, address uint16, icon string, ampHours, nominalVoltage float64, updatedAt time.Time) registers.DecodedValue {
+	kwh := roundFloat((ampHours*nominalVoltage)/1000, 1)
+	return registers.DecodedValue{
+		ID:          id,
+		Name:        name,
+		Address:     address,
+		Group:       registers.GroupSlow,
+		Component:   "sensor",
+		Entity:      "diagnostic",
+		Unit:        "kWh",
+		DeviceClass: "energy",
+		StateClass:  "total_increasing",
+		Icon:        icon,
+		Value:       kwh,
+		Rendered:    strconv.FormatFloat(kwh, 'f', 1, 64),
+		UpdatedAt:   updatedAt,
+	}
+}
+
+func nominalBatteryVoltage(value registers.DecodedValue) (float64, bool) {
+	label := value.Rendered
+	if label == "" {
+		if text, ok := value.Value.(string); ok {
+			label = text
+		}
+	}
+
+	fields := strings.Fields(label)
+	if len(fields) < 2 {
+		return 0, false
+	}
+
+	cellToken := fields[len(fields)-1]
+	if !strings.HasPrefix(cellToken, "x") {
+		return 0, false
+	}
+	cells, err := strconv.Atoi(strings.TrimPrefix(cellToken, "x"))
+	if err != nil || cells <= 0 {
+		return 0, false
+	}
+
+	switch {
+	case strings.HasPrefix(label, "LFP "):
+		return float64(cells) * 3.2, true
+	case strings.HasPrefix(label, "Ternary Li "):
+		return float64(cells) * 3.7, true
+	default:
+		return 0, false
+	}
 }
 
 func (s *Store) switchEventLocked(values []registers.DecodedValue, machineState registers.DecodedValue) switchEvent {
