@@ -160,6 +160,59 @@ func TestPublishCommandStatePublishesOptimisticState(t *testing.T) {
 	}
 }
 
+func TestResetClientClearsStuckClient(t *testing.T) {
+	t.Parallel()
+
+	fakeClient := &recordingClient{}
+	service := &Service{
+		client:        fakeClient,
+		key:           "mqtt-key",
+		discoveryKey:  "discovery-key",
+		lastPublished: map[string]string{"topic": "payload"},
+	}
+
+	service.resetClient("test reset", fakeClient)
+
+	if service.client != nil {
+		t.Fatal("client should be cleared")
+	}
+	if service.key != "" {
+		t.Fatalf("key = %q, want empty", service.key)
+	}
+	if service.discoveryKey != "" {
+		t.Fatalf("discoveryKey = %q, want empty", service.discoveryKey)
+	}
+	if len(service.lastPublished) != 0 {
+		t.Fatalf("lastPublished length = %d, want 0", len(service.lastPublished))
+	}
+	if service.unhealthySince.IsZero() {
+		t.Fatal("unhealthySince should be set after reset")
+	}
+	if fakeClient.disconnects != 1 {
+		t.Fatalf("disconnects = %d, want 1", fakeClient.disconnects)
+	}
+}
+
+func TestMarkUnhealthyKeepsFirstFailureTime(t *testing.T) {
+	t.Parallel()
+
+	service := &Service{}
+	first := time.Date(2026, time.April, 21, 6, 0, 0, 0, time.UTC)
+	second := first.Add(3 * time.Minute)
+
+	if got := service.markUnhealthy(first); got != 0 {
+		t.Fatalf("first mark duration = %s, want 0", got)
+	}
+	if got := service.markUnhealthy(second); got != 3*time.Minute {
+		t.Fatalf("second mark duration = %s, want 3m", got)
+	}
+
+	service.markHealthy()
+	if !service.unhealthySince.IsZero() {
+		t.Fatal("unhealthySince should be cleared after markHealthy")
+	}
+}
+
 type publishedMessage struct {
 	topic    string
 	payload  string
@@ -167,15 +220,20 @@ type publishedMessage struct {
 }
 
 type recordingClient struct {
-	mu        sync.Mutex
-	publishes []publishedMessage
+	mu          sync.Mutex
+	publishes   []publishedMessage
+	disconnects int
 }
 
 func (c *recordingClient) IsConnected() bool      { return true }
 func (c *recordingClient) IsConnectionOpen() bool { return true }
 func (c *recordingClient) Connect() paho.Token    { return immediateToken{} }
 
-func (c *recordingClient) Disconnect(uint) {}
+func (c *recordingClient) Disconnect(uint) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.disconnects++
+}
 
 func (c *recordingClient) Publish(topic string, qos byte, retained bool, payload interface{}) paho.Token {
 	c.mu.Lock()
