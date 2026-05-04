@@ -449,7 +449,8 @@ select {
 .energy-map.grid-active .grid-to-load,
 .energy-map.solar-active.inverter-active .solar-to-load,
 .energy-map.battery-discharge.inverter-active .battery-to-load,
-.energy-map.battery-charge.solar-active .solar-to-battery {
+.energy-map.battery-charge.solar-active .solar-to-battery,
+.energy-map.grid-charge .grid-to-battery {
   stroke-dasharray: 9 10;
   animation: energy-flow 1.1s linear infinite;
 }
@@ -472,6 +473,11 @@ select {
 .energy-map.battery-charge.solar-active .solar-to-battery {
   stroke: #ff5fa2;
   filter: drop-shadow(0 0 8px rgba(255, 95, 162, 0.32));
+}
+
+.energy-map.grid-charge .grid-to-battery {
+  stroke: #34aaf4;
+  filter: drop-shadow(0 0 8px rgba(52, 170, 244, 0.35));
 }
 
 .energy-node {

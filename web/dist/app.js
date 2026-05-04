@@ -161,6 +161,7 @@ function renderPowerOverview(byId) {
     solarActive ? "solar-active" : "",
     batteryDischarging ? "battery-discharge" : "",
     batteryCharging ? "battery-charge" : "",
+    gridActive && batteryCharging ? "grid-charge" : "",
   ].filter(Boolean).join(" ");
 
   els.powerOverview.innerHTML = `
@@ -175,6 +176,7 @@ function renderPowerOverview(byId) {
           <path class="energy-line solar-to-load" d="M210 66 V112 C210 145 238 154 326 154"></path>
           <path class="energy-line battery-to-load" d="M210 224 V188 C210 164 238 154 326 154"></path>
           <path class="energy-line solar-to-battery" d="M210 66 V224"></path>
+          <path class="energy-line grid-to-battery" d="M84 154 H168 C196 154 210 178 210 224"></path>
         </svg>
         <div class="energy-node solar-node">
           <span class="node-icon inverter-symbol"></span>
