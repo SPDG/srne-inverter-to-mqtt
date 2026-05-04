@@ -15,6 +15,7 @@ const els = {
   refreshStatus: document.getElementById("refresh-status"),
   powerOverview: document.getElementById("power-overview"),
   services: document.getElementById("services"),
+  heroKpiGrid: document.getElementById("hero-kpi-grid"),
   energyGrid: document.getElementById("energy-grid"),
   telemetryGrid: document.getElementById("telemetry-grid"),
   telemetrySubtitle: document.getElementById("telemetry-subtitle"),
@@ -82,6 +83,7 @@ function renderStatus(status) {
   renderHeader(status, byId);
   renderServices(status.service || {});
   renderPowerOverview(byId);
+  renderHeroKpis(byId);
   renderEnergy(byId);
   renderTelemetry(telemetry);
   renderControls(telemetry);
@@ -128,6 +130,19 @@ function renderServices(services) {
     });
 }
 
+function renderHeroKpis(byId) {
+  const items = [
+    byId.today_production,
+    byId.today_load_consumption,
+    byId.today_energy_import,
+    byId.system_energy_efficiency_total,
+    byId.system_energy_losses_total,
+    byId.total_load_consumption,
+  ].filter(Boolean);
+
+  renderTelemetryCards(els.heroKpiGrid, items, "Waiting for energy counters.");
+}
+
 function renderPowerOverview(byId) {
   const batteryCurrent = Number(byId.battery_current?.value ?? byId.battery_current?.rendered ?? 0);
   const batteryVoltage = Number(byId.battery_voltage?.value ?? byId.battery_voltage?.rendered ?? 0);
@@ -164,7 +179,7 @@ function renderPowerOverview(byId) {
           <span>Voltage <strong>${valueText(byId.grid_voltage)}</strong></span>
           <span>Frequency <strong>${valueText(byId.grid_frequency)}</strong></span>
         </div>
-        <div class="load-card">
+        <div class="load-card ${gridActive ? "grid-fed" : "inverter-fed"}">
           <div class="source-title">Output</div>
           <div class="source-kind">Load</div>
           <strong>${valueText(byId.load_power)}</strong>
