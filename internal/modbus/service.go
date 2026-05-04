@@ -25,8 +25,10 @@ type Service struct {
 
 	mu      sync.Mutex
 	key     string
-	handler *gomodbus.RTUClientHandler
-	client  gomodbus.Client
+	handler interface {
+		Close() error
+	}
+	client gomodbus.Client
 }
 
 const unlockRegisterAddress = 0xE203
@@ -431,22 +433,54 @@ func (s *Service) ensureClientLocked(cfg config.Config) (gomodbus.Client, error)
 
 	s.closeLocked()
 
-	handler := gomodbus.NewRTUClientHandler(cfg.Serial.Port)
-	handler.BaudRate = cfg.Serial.BaudRate
-	handler.DataBits = cfg.Serial.DataBits
-	handler.Parity = strings.ToUpper(strings.TrimSpace(cfg.Serial.Parity))
-	handler.StopBits = cfg.Serial.StopBits
-	handler.Timeout = cfg.Serial.Timeout.Duration
-	handler.SlaveId = cfg.Device.SlaveID
-
-	if err := handler.Connect(); err != nil {
-		return nil, fmt.Errorf("connect serial %s: %w", cfg.Serial.Port, err)
+	client, handler, err := OpenClient(cfg)
+	if err != nil {
+		return nil, err
 	}
-
 	s.handler = handler
-	s.client = gomodbus.NewClient(handler)
+	s.client = client
 	s.key = key
 	return s.client, nil
+}
+
+func OpenClient(cfg config.Config) (gomodbus.Client, interface{ Close() error }, error) {
+	mode, err := cfg.Serial.ConnectionMode()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	switch mode {
+	case config.ConnectionModeRTU:
+		handler := gomodbus.NewRTUClientHandler(cfg.Serial.Port)
+		handler.BaudRate = cfg.Serial.BaudRate
+		handler.DataBits = cfg.Serial.DataBits
+		handler.Parity = strings.ToUpper(strings.TrimSpace(cfg.Serial.Parity))
+		handler.StopBits = cfg.Serial.StopBits
+		handler.Timeout = cfg.Serial.Timeout.Duration
+		handler.SlaveId = cfg.Device.SlaveID
+		if err := handler.Connect(); err != nil {
+			return nil, nil, fmt.Errorf("connect serial %s: %w", cfg.Serial.Port, err)
+		}
+		return gomodbus.NewClient(handler), handler, nil
+	case config.ConnectionModeRTUOverTCP:
+		address, _ := config.TCPAddress(cfg.Serial.Port)
+		handler := newRTUOverTCPClientHandler(address, cfg.Device.SlaveID, cfg.Serial.Timeout.Duration)
+		if err := handler.Connect(); err != nil {
+			return nil, nil, fmt.Errorf("connect rtu-over-tcp %s: %w", address, err)
+		}
+		return gomodbus.NewClient(handler), handler, nil
+	case config.ConnectionModeModbusTCP:
+		address, _ := config.TCPAddress(cfg.Serial.Port)
+		handler := gomodbus.NewTCPClientHandler(address)
+		handler.Timeout = cfg.Serial.Timeout.Duration
+		handler.SlaveId = cfg.Device.SlaveID
+		if err := handler.Connect(); err != nil {
+			return nil, nil, fmt.Errorf("connect modbus-tcp %s: %w", address, err)
+		}
+		return gomodbus.NewClient(handler), handler, nil
+	default:
+		return nil, nil, fmt.Errorf("unsupported serial connection mode %q", mode)
+	}
 }
 
 func (s *Service) close() {
@@ -465,8 +499,10 @@ func (s *Service) closeLocked() {
 }
 
 func serialKey(cfg config.Config) string {
-	return fmt.Sprintf("%s|%d|%d|%d|%s|%d|%s",
+	mode, _ := cfg.Serial.ConnectionMode()
+	return fmt.Sprintf("%s|%s|%d|%d|%d|%s|%d|%s",
 		cfg.Serial.Port,
+		mode,
 		cfg.Serial.BaudRate,
 		cfg.Serial.DataBits,
 		cfg.Serial.StopBits,

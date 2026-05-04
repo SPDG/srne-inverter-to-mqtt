@@ -33,6 +33,7 @@ const els = {
   deviceName: document.getElementById("device-name"),
   deviceSlaveID: document.getElementById("device-slave-id"),
   serialPort: document.getElementById("serial-port"),
+  serialNetworkProtocol: document.getElementById("serial-network-protocol"),
   serialBaudRate: document.getElementById("serial-baud-rate"),
   serialParity: document.getElementById("serial-parity"),
   serialTimeout: document.getElementById("serial-timeout"),
@@ -361,6 +362,7 @@ function renderSettings(status) {
     ["Uptime", status.runtime?.uptime ?? "-"],
     ["Device", status.device?.name ?? "-"],
     ["Port", status.device?.port ?? "-"],
+    ["Network protocol", status.device?.networkProtocol ?? "-"],
     ["Slave ID", status.device?.slaveId ?? "-"],
   ]);
 }
@@ -499,6 +501,7 @@ function fillConfigForm(cfg) {
   els.deviceName.value = cfg.device.name;
   els.deviceSlaveID.value = cfg.device.slaveId;
   els.serialPort.value = cfg.serial.port;
+  els.serialNetworkProtocol.value = cfg.serial.networkProtocol || "rtu";
   els.serialBaudRate.value = cfg.serial.baudRate;
   els.serialParity.value = cfg.serial.parity;
   els.serialTimeout.value = cfg.serial.timeout;
@@ -521,6 +524,7 @@ function collectConfigForm() {
     },
     serial: {
       port: els.serialPort.value.trim(),
+      networkProtocol: els.serialNetworkProtocol.value,
       baudRate: Number(els.serialBaudRate.value),
       dataBits: latestConfig?.serial?.dataBits || 8,
       parity: els.serialParity.value,

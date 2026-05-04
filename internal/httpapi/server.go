@@ -73,6 +73,7 @@ func (h *Handler) handleHealth(w http.ResponseWriter, _ *http.Request) {
 
 func (h *Handler) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	cfg := h.store.GetConfig()
+	mode, _ := cfg.Serial.ConnectionMode()
 	snapshot := h.status.GetStateSnapshot()
 	snapshot.Telemetry = registers.MergeWriteOnlyControls(snapshot.Telemetry, time.Now().UTC())
 
@@ -86,9 +87,10 @@ func (h *Handler) handleStatus(w http.ResponseWriter, _ *http.Request) {
 		},
 		"service": snapshot.Services,
 		"device": map[string]any{
-			"name":    cfg.Device.Name,
-			"slaveId": cfg.Device.SlaveID,
-			"port":    cfg.Serial.Port,
+			"name":            cfg.Device.Name,
+			"slaveId":         cfg.Device.SlaveID,
+			"port":            cfg.Serial.Port,
+			"networkProtocol": mode,
 		},
 		"telemetry": snapshot.Telemetry,
 	})

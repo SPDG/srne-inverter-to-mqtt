@@ -58,6 +58,14 @@ See [`configs/config.example.yaml`](configs/config.example.yaml).
 
 On Linux, prefer stable serial symlinks from `/dev/serial/by-path/` or `/dev/serial/by-id/` instead of raw `/dev/ttyUSB*` names whenever possible.
 
+Serial-over-Ethernet converters are supported by setting `serial.port` to a TCP endpoint such as `tcp://192.168.6.50:502`. Use `serial.network_protocol: rtu_over_tcp` for transparent serial servers, or `serial.network_protocol: modbus_tcp` when the converter is configured as a Modbus TCP gateway.
+
+The probe command uses the same transports, for example:
+
+```bash
+go run ./cmd/modbus-probe --port tcp://192.168.6.50:502 --network-protocol rtu_over_tcp --slave 1 --address 0x0100 --count 1
+```
+
 Deployment details and a ready-to-use `systemd` unit are documented in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 ## HTTP API
