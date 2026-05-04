@@ -147,13 +147,21 @@ function renderPowerOverview(byId) {
   const batteryCurrent = Number(byId.battery_current?.value ?? byId.battery_current?.rendered ?? 0);
   const batteryVoltage = Number(byId.battery_voltage?.value ?? byId.battery_voltage?.rendered ?? 0);
   const gridPower = Number(byId.grid_power?.value ?? byId.grid_power?.rendered ?? 0);
+  const pvPower = Number(byId.pv_power?.value ?? byId.pv_power?.rendered ?? 0);
   const machineState = String(byId.machine_state?.rendered ?? byId.machine_state?.value ?? "");
   const batteryPower = Math.round(Math.abs(batteryCurrent * batteryVoltage));
   const gridActive = machineState === "AC Power Operation" || gridPower > 20;
-  const inverterActive = !gridActive;
   const direction = batteryCurrent > 0.1 ? "Discharging" : batteryCurrent < -0.1 ? "Charging" : "Idle";
   const activeLabel = gridActive ? "Grid Active" : "Inverter Active";
-  const activeSubtitle = gridActive ? "Utility powers load" : "PV and battery path";
+  const solarActive = pvPower > 20;
+  const batteryDischarging = batteryCurrent > 0.1;
+  const batteryCharging = batteryCurrent < -0.1;
+  const mapClasses = [
+    gridActive ? "grid-active" : "inverter-active",
+    solarActive ? "solar-active" : "",
+    batteryDischarging ? "battery-discharge" : "",
+    batteryCharging ? "battery-charge" : "",
+  ].filter(Boolean).join(" ");
 
   els.powerOverview.innerHTML = `
     <div class="power-tile solar">
@@ -161,34 +169,37 @@ function renderPowerOverview(byId) {
         <span class="tile-label">${escapeHTML(activeLabel)}</span>
         <span class="speed-chip">${escapeHTML(direction)}</span>
       </div>
-      <div class="source-flow ${gridActive ? "grid-active" : "inverter-active"}">
-        <div class="source-card inverter ${inverterActive ? "active" : ""}">
-          <div class="source-title"><span class="source-icon">⚡</span> Inverter</div>
-          <div class="source-kind">PV + Battery</div>
-          <span><span class="row-icon">☀</span> PV <strong>${valueText(byId.pv_power)}</strong></span>
-          <span><span class="row-icon">▰</span> Battery <strong>${fmt.format(batteryPower)} W</strong></span>
-          <span><span class="row-icon">%</span> SOC <strong>${valueText(byId.battery_soc)}</strong></span>
+      <div class="energy-map ${mapClasses}">
+        <svg class="energy-lines" viewBox="0 0 420 280" aria-hidden="true">
+          <path class="energy-line grid-to-load" d="M84 154 H326"></path>
+          <path class="energy-line solar-to-load" d="M210 66 V112 C210 145 238 154 326 154"></path>
+          <path class="energy-line battery-to-load" d="M210 224 V188 C210 164 238 154 326 154"></path>
+          <path class="energy-line solar-to-battery" d="M210 66 V224"></path>
+        </svg>
+        <div class="energy-node solar-node">
+          <span class="node-icon inverter-symbol"></span>
+          <span>Solar</span>
+          <strong>${valueText(byId.pv_power)}</strong>
         </div>
-        <div class="flow-hub">
-          <span>${gridActive ? "GRID" : "INV"}</span>
+        <div class="energy-node grid-node ${gridActive ? "active" : ""}">
+          <span class="node-icon grid-symbol"></span>
+          <span>Grid</span>
+          <strong>${valueText(byId.grid_power)}</strong>
+          <small>${valueText(byId.grid_voltage)} / ${valueText(byId.grid_frequency)}</small>
         </div>
-        <div class="source-card grid ${gridActive ? "active" : ""}">
-          <div class="source-title"><span class="source-icon">⌁</span> Grid</div>
-          <div class="source-kind">Utility</div>
-          <span>Power <strong>${valueText(byId.grid_power)}</strong></span>
-          <span>Voltage <strong>${valueText(byId.grid_voltage)}</strong></span>
-          <span>Frequency <strong>${valueText(byId.grid_frequency)}</strong></span>
+        <div class="energy-node battery-node ${batteryCharging || batteryDischarging ? "active" : ""}">
+          <span class="node-icon battery-symbol"></span>
+          <span>Battery</span>
+          <strong>${fmt.format(batteryPower)} W</strong>
+          <small>SOC ${valueText(byId.battery_soc)}</small>
         </div>
-        <div class="load-card ${gridActive ? "grid-fed" : "inverter-fed"}">
-          <div class="load-icon">↓</div>
-          <div>
-            <div class="source-title">Output</div>
-            <div class="source-kind">Load</div>
-          </div>
+        <div class="energy-node load-node active">
+          <span class="node-icon load-symbol"></span>
+          <span>Output</span>
           <strong>${valueText(byId.load_power)}</strong>
+          <small>Load</small>
         </div>
       </div>
-      <div class="power-value">${valueText(byId.load_power)}<span>${escapeHTML(activeSubtitle)}</span></div>
     </div>
   `;
 }
