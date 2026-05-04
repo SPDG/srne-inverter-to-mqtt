@@ -356,7 +356,7 @@ select {
 }
 
 .power-tile {
-  min-height: 470px;
+  min-height: 394px;
   padding: 16px;
   position: relative;
   overflow: hidden;
@@ -436,7 +436,7 @@ select {
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 72px minmax(0, 1fr);
-  grid-template-rows: auto 88px;
+  grid-template-rows: auto 96px;
   gap: 12px 14px;
   margin-top: 16px;
   padding: 16px 0 8px;
@@ -531,6 +531,36 @@ select {
 }
 
 .source-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.source-icon,
+.row-icon,
+.load-icon {
+  display: inline-grid;
+  place-items: center;
+  border-radius: 7px;
+  background: #26313b;
+  color: #34aaf4;
+  font-weight: 900;
+}
+
+.source-icon {
+  width: 25px;
+  height: 25px;
+}
+
+.row-icon {
+  width: 18px;
+  height: 18px;
+  margin-right: 5px;
+  color: #44df83;
+  font-size: 11px;
+}
+
+.source-title {
   color: #eef3f8;
   font-weight: 800;
 }
@@ -571,10 +601,13 @@ select {
   grid-row: 2;
   align-self: end;
   justify-self: stretch;
+  min-width: 150px;
   display: grid;
-  gap: 3px;
-  padding: 10px;
-  text-align: center;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 4px 10px;
+  align-items: center;
+  padding: 12px;
+  text-align: left;
 }
 
 .load-card.inverter-fed {
@@ -586,8 +619,17 @@ select {
 }
 
 .load-card strong {
+  grid-column: 2;
   color: #eef3f8;
-  font-size: 16px;
+  font-size: 18px;
+}
+
+.load-icon {
+  grid-row: 1 / span 2;
+  width: 34px;
+  height: 34px;
+  color: #44df83;
+  font-size: 20px;
 }
 
 @keyframes flow-side {
@@ -855,7 +897,6 @@ code {
   }
 
   .service-grid,
-  .flow-grid,
   .source-flow,
   .config-form {
     grid-template-columns: 1fr;
@@ -869,5 +910,9 @@ code {
   .flow-hub,
   .load-card {
     grid-column: auto;
+  }
+
+  .load-card {
+    justify-self: stretch;
   }
 }

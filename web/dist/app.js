@@ -163,35 +163,32 @@ function renderPowerOverview(byId) {
       </div>
       <div class="source-flow ${gridActive ? "grid-active" : "inverter-active"}">
         <div class="source-card inverter ${inverterActive ? "active" : ""}">
-          <div class="source-title">Inverter</div>
+          <div class="source-title"><span class="source-icon">⚡</span> Inverter</div>
           <div class="source-kind">PV + Battery</div>
-          <span>PV <strong>${valueText(byId.pv_power)}</strong></span>
-          <span>Battery <strong>${fmt.format(batteryPower)} W</strong></span>
-          <span>SOC <strong>${valueText(byId.battery_soc)}</strong></span>
+          <span><span class="row-icon">☀</span> PV <strong>${valueText(byId.pv_power)}</strong></span>
+          <span><span class="row-icon">▰</span> Battery <strong>${fmt.format(batteryPower)} W</strong></span>
+          <span><span class="row-icon">%</span> SOC <strong>${valueText(byId.battery_soc)}</strong></span>
         </div>
         <div class="flow-hub">
           <span>${gridActive ? "GRID" : "INV"}</span>
         </div>
         <div class="source-card grid ${gridActive ? "active" : ""}">
-          <div class="source-title">Grid</div>
+          <div class="source-title"><span class="source-icon">⌁</span> Grid</div>
           <div class="source-kind">Utility</div>
           <span>Power <strong>${valueText(byId.grid_power)}</strong></span>
           <span>Voltage <strong>${valueText(byId.grid_voltage)}</strong></span>
           <span>Frequency <strong>${valueText(byId.grid_frequency)}</strong></span>
         </div>
         <div class="load-card ${gridActive ? "grid-fed" : "inverter-fed"}">
-          <div class="source-title">Output</div>
-          <div class="source-kind">Load</div>
+          <div class="load-icon">↓</div>
+          <div>
+            <div class="source-title">Output</div>
+            <div class="source-kind">Load</div>
+          </div>
           <strong>${valueText(byId.load_power)}</strong>
         </div>
       </div>
       <div class="power-value">${valueText(byId.load_power)}<span>${escapeHTML(activeSubtitle)}</span></div>
-      <div class="flow-grid">
-        <span>Battery <strong>${fmt.format(batteryPower)} W</strong></span>
-        <span>Load <strong>${valueText(byId.load_power)}</strong></span>
-        <span>PV <strong>${valueText(byId.pv_power)}</strong></span>
-        <span>Grid <strong>${valueText(byId.grid_power)}</strong></span>
-      </div>
     </div>
   `;
 }
