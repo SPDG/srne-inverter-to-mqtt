@@ -1,5 +1,8 @@
 # SRNE Inverter to MQTT
 
+[![ci](https://github.com/SPDG/srne-inverter-to-mqtt/actions/workflows/ci.yml/badge.svg)](https://github.com/SPDG/srne-inverter-to-mqtt/actions/workflows/ci.yml)
+[![release](https://github.com/SPDG/srne-inverter-to-mqtt/actions/workflows/release.yml/badge.svg)](https://github.com/SPDG/srne-inverter-to-mqtt/actions/workflows/release.yml)
+
 Linux-first single-binary bridge for polling an SRNE inverter over local Modbus RTU and publishing live telemetry and writable settings to Home Assistant over MQTT.
 
 ## Highlights
