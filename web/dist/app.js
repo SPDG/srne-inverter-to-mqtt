@@ -1,4 +1,4 @@
-const REFRESH_INTERVAL_MS = 15_000;
+const REFRESH_INTERVAL_MS = 5_000;
 
 const fmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 let latestStatus = null;

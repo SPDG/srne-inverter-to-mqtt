@@ -285,12 +285,15 @@ func (s *Service) pollGroup(group registers.PollGroup) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// The SRNE setup on the target host proved unstable when a serial session
-	// stayed open across multiple reads. Reopening per range is intentional: it
-	// trades some overhead for a clean USB-RS485 session and measurably fewer
-	// stalled polls on flaky CH341 adapters.
-	s.closeLocked()
-	defer s.closeLocked()
+	reopenPerRange := shouldReopenPerRange(cfg)
+	if reopenPerRange {
+		// The SRNE setup on the target host proved unstable when a serial
+		// session stayed open across multiple reads. Reopening per range is
+		// intentional for local USB adapters, but TCP converters tend to behave
+		// better when one connection is kept for the whole poll cycle.
+		s.closeLocked()
+		defer s.closeLocked()
+	}
 
 	plan := s.readPlanForGroup(group)
 	values := make([]registers.DecodedValue, 0, len(registers.ByGroup(group)))
@@ -314,7 +317,9 @@ func (s *Service) pollGroup(group registers.PollGroup) {
 		openFailures = 0
 
 		payload, err := s.readHoldingWithRetryLocked(client, cfg, readRange.Start, readRange.Count)
-		s.closeLocked()
+		if reopenPerRange {
+			s.closeLocked()
+		}
 		if err != nil {
 			errors = append(errors, fmt.Sprintf("0x%04X/%d: %v", readRange.Start, readRange.Count, err))
 			if idx < len(plan)-1 {
@@ -368,6 +373,11 @@ func (s *Service) pollGroup(group registers.PollGroup) {
 		errors = append(errors, "no registers configured")
 	}
 	s.state.SetServiceStatus("modbus", "error", false, strings.Join(errors, " | "), time.Time{})
+}
+
+func shouldReopenPerRange(cfg config.Config) bool {
+	mode, err := cfg.Serial.ConnectionMode()
+	return err != nil || mode == config.ConnectionModeRTU
 }
 
 func (s *Service) readPlanForGroup(group registers.PollGroup) []registers.ReadRange {
