@@ -49,3 +49,58 @@ func TestValidateRejectsInvalidParity(t *testing.T) {
 		t.Fatal("Validate() expected error for invalid parity")
 	}
 }
+
+func TestConnectionModeDefaultsTCPPortToRTUOverTCP(t *testing.T) {
+	t.Parallel()
+
+	cfg := Default()
+	cfg.Serial.Port = "tcp://192.168.6.50:502"
+	cfg.Serial.NetworkProtocol = "rtu"
+
+	mode, err := cfg.Serial.ConnectionMode()
+	if err != nil {
+		t.Fatalf("ConnectionMode() error = %v", err)
+	}
+	if mode != ConnectionModeRTUOverTCP {
+		t.Fatalf("ConnectionMode() = %q, want %q", mode, ConnectionModeRTUOverTCP)
+	}
+}
+
+func TestConnectionModeSupportsModbusTCP(t *testing.T) {
+	t.Parallel()
+
+	cfg := Default()
+	cfg.Serial.Port = "tcp://192.168.6.50:502"
+	cfg.Serial.NetworkProtocol = "modbus_tcp"
+
+	mode, err := cfg.Serial.ConnectionMode()
+	if err != nil {
+		t.Fatalf("ConnectionMode() error = %v", err)
+	}
+	if mode != ConnectionModeModbusTCP {
+		t.Fatalf("ConnectionMode() = %q, want %q", mode, ConnectionModeModbusTCP)
+	}
+}
+
+func TestConnectionModeRejectsTCPProtocolForLocalPort(t *testing.T) {
+	t.Parallel()
+
+	cfg := Default()
+	cfg.Serial.Port = "/dev/ttyUSB0"
+	cfg.Serial.NetworkProtocol = "modbus_tcp"
+
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate() expected error for modbus_tcp on a local serial port")
+	}
+}
+
+func TestConnectionModeRejectsEmptyTCPEndpoint(t *testing.T) {
+	t.Parallel()
+
+	cfg := Default()
+	cfg.Serial.Port = "tcp://"
+
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate() expected error for empty TCP endpoint")
+	}
+}

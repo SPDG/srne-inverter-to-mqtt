@@ -68,12 +68,13 @@ type DeviceConfig struct {
 }
 
 type SerialConfig struct {
-	Port     string   `yaml:"port" json:"port"`
-	BaudRate int      `yaml:"baud_rate" json:"baudRate"`
-	DataBits int      `yaml:"data_bits" json:"dataBits"`
-	Parity   string   `yaml:"parity" json:"parity"`
-	StopBits int      `yaml:"stop_bits" json:"stopBits"`
-	Timeout  Duration `yaml:"timeout" json:"timeout"`
+	Port            string   `yaml:"port" json:"port"`
+	NetworkProtocol string   `yaml:"network_protocol" json:"networkProtocol"`
+	BaudRate        int      `yaml:"baud_rate" json:"baudRate"`
+	DataBits        int      `yaml:"data_bits" json:"dataBits"`
+	Parity          string   `yaml:"parity" json:"parity"`
+	StopBits        int      `yaml:"stop_bits" json:"stopBits"`
+	Timeout         Duration `yaml:"timeout" json:"timeout"`
 }
 
 type PollingConfig struct {
@@ -107,12 +108,13 @@ func Default() Config {
 			SlaveID: 1,
 		},
 		Serial: SerialConfig{
-			Port:     "/dev/ttyUSB0",
-			BaudRate: 9600,
-			DataBits: 8,
-			Parity:   "N",
-			StopBits: 1,
-			Timeout:  Duration{Duration: 3 * time.Second},
+			Port:            "/dev/ttyUSB0",
+			NetworkProtocol: "rtu",
+			BaudRate:        9600,
+			DataBits:        8,
+			Parity:          "N",
+			StopBits:        1,
+			Timeout:         Duration{Duration: 3 * time.Second},
 		},
 		Polling: PollingConfig{
 			FastInterval:   Duration{Duration: 15 * time.Second},
@@ -218,6 +220,10 @@ func (c Config) Validate() error {
 		return errors.New("serial.stop_bits must be 1 or 2")
 	}
 
+	if _, err := c.Serial.ConnectionMode(); err != nil {
+		return err
+	}
+
 	if parity := strings.ToUpper(strings.TrimSpace(c.Serial.Parity)); parity != "N" && parity != "E" && parity != "O" {
 		return errors.New("serial.parity must be N, E, or O")
 	}
@@ -247,4 +253,57 @@ func (c Config) Validate() error {
 	}
 
 	return nil
+}
+
+type ConnectionMode string
+
+const (
+	ConnectionModeRTU        ConnectionMode = "rtu"
+	ConnectionModeRTUOverTCP ConnectionMode = "rtu_over_tcp"
+	ConnectionModeModbusTCP  ConnectionMode = "modbus_tcp"
+)
+
+func (c SerialConfig) ConnectionMode() (ConnectionMode, error) {
+	protocol := strings.ToLower(strings.TrimSpace(c.NetworkProtocol))
+	switch protocol {
+	case "", "rtu":
+		if _, ok := TCPAddress(c.Port); ok {
+			return ConnectionModeRTUOverTCP, nil
+		}
+		if isTCPPort(c.Port) {
+			return "", errors.New("serial.port tcp endpoint must include host:port")
+		}
+		return ConnectionModeRTU, nil
+	case "rtu_over_tcp", "rtu-over-tcp":
+		if _, ok := TCPAddress(c.Port); !ok {
+			return "", errors.New("serial.network_protocol rtu_over_tcp requires serial.port to start with tcp://")
+		}
+		return ConnectionModeRTUOverTCP, nil
+	case "modbus_tcp", "modbus-tcp", "tcp":
+		if _, ok := TCPAddress(c.Port); !ok {
+			return "", errors.New("serial.network_protocol modbus_tcp requires serial.port to start with tcp://")
+		}
+		return ConnectionModeModbusTCP, nil
+	default:
+		return "", errors.New("serial.network_protocol must be rtu, rtu_over_tcp, or modbus_tcp")
+	}
+}
+
+func TCPAddress(port string) (string, bool) {
+	port = strings.TrimSpace(port)
+	switch {
+	case strings.HasPrefix(port, "tcp://"):
+		address := strings.TrimSpace(strings.TrimPrefix(port, "tcp://"))
+		return address, address != ""
+	case strings.HasPrefix(port, "tcp:"):
+		address := strings.TrimSpace(strings.TrimPrefix(port, "tcp:"))
+		return address, address != ""
+	default:
+		return "", false
+	}
+}
+
+func isTCPPort(port string) bool {
+	port = strings.TrimSpace(port)
+	return strings.HasPrefix(port, "tcp://") || strings.HasPrefix(port, "tcp:")
 }

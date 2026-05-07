@@ -145,7 +145,16 @@
 
               <label>
                 <span>Serial port</span>
-                <input name="serial.port" id="serial-port" placeholder="/dev/serial/by-path/..." required>
+                <input name="serial.port" id="serial-port" placeholder="/dev/serial/by-path/... or tcp://192.168.6.50:502" required>
+              </label>
+
+              <label>
+                <span>Network protocol</span>
+                <select name="serial.network_protocol" id="serial-network-protocol">
+                  <option value="rtu">RTU serial / RTU over TCP</option>
+                  <option value="rtu_over_tcp">RTU over TCP</option>
+                  <option value="modbus_tcp">Modbus TCP gateway</option>
+                </select>
               </label>
 
               <label>

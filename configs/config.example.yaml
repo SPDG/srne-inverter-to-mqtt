@@ -4,6 +4,7 @@ device:
 
 serial:
   port: /dev/ttyUSB0
+  network_protocol: rtu
   baud_rate: 9600
   data_bits: 8
   parity: N
