@@ -63,8 +63,9 @@ type Config struct {
 }
 
 type DeviceConfig struct {
-	Name    string `yaml:"name" json:"name"`
-	SlaveID uint8  `yaml:"slave_id" json:"slaveId"`
+	Name         string `yaml:"name" json:"name"`
+	SlaveID      uint8  `yaml:"slave_id" json:"slaveId"`
+	InverterType string `yaml:"inverter_type" json:"inverterType"`
 }
 
 type SerialConfig struct {
@@ -104,8 +105,9 @@ type LoggingConfig struct {
 func Default() Config {
 	return Config{
 		Device: DeviceConfig{
-			Name:    "srne-main",
-			SlaveID: 1,
+			Name:         "srne-main",
+			SlaveID:      1,
+			InverterType: "single_phase",
 		},
 		Serial: SerialConfig{
 			Port:            "/dev/ttyUSB0",
@@ -207,6 +209,9 @@ func (c Config) Validate() error {
 	if c.Device.SlaveID == 0 {
 		return errors.New("device.slave_id must be greater than 0")
 	}
+	if _, err := c.Device.NormalizedInverterType(); err != nil {
+		return err
+	}
 
 	if c.Serial.BaudRate <= 0 {
 		return errors.New("serial.baud_rate must be greater than 0")
@@ -253,6 +258,17 @@ func (c Config) Validate() error {
 	}
 
 	return nil
+}
+
+func (c DeviceConfig) NormalizedInverterType() (string, error) {
+	switch strings.ToLower(strings.TrimSpace(c.InverterType)) {
+	case "", "single_phase", "single-phase", "single", "1p":
+		return "single_phase", nil
+	case "three_phase", "three-phase", "three", "3p":
+		return "three_phase", nil
+	default:
+		return "", errors.New("device.inverter_type must be single_phase or three_phase")
+	}
 }
 
 type ConnectionMode string

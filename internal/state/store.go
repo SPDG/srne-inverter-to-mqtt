@@ -164,6 +164,7 @@ func derivedTelemetry(values []registers.DecodedValue, lastSwitchGrid, lastSwitc
 		)
 	}
 
+	derived = append(derived, threePhasePowerTelemetry(index)...)
 	derived = append(derived, batteryEnergyTelemetry(index)...)
 
 	derived = append(derived, switchTelemetry(
@@ -196,6 +197,82 @@ func derivedTelemetry(values []registers.DecodedValue, lastSwitchGrid, lastSwitc
 	)...)
 
 	return derived
+}
+
+func threePhasePowerTelemetry(index map[string]registers.DecodedValue) []registers.DecodedValue {
+	derived := make([]registers.DecodedValue, 0, 2)
+	derived = append(derived, phasePowerSumTelemetry(
+		"pv_power",
+		"PV Power",
+		0xFFFA,
+		"mdi:white-balance-sunny",
+		index,
+		"pv1_power",
+		"pv2_power",
+	)...)
+	derived = append(derived, phasePowerSumTelemetry(
+		"load_power",
+		"Load Power",
+		0xFFF8,
+		"mdi:home-lightning-bolt-outline",
+		index,
+		"load_power_phase_a",
+		"load_power_phase_b",
+		"load_power_phase_c",
+	)...)
+	derived = append(derived, phasePowerSumTelemetry(
+		"grid_power",
+		"Grid Power",
+		0xFFF9,
+		"mdi:transmission-tower",
+		index,
+		"grid_power_phase_a",
+		"grid_power_phase_b",
+		"grid_power_phase_c",
+	)...)
+	return derived
+}
+
+func phasePowerSumTelemetry(id, name string, address uint16, icon string, index map[string]registers.DecodedValue, phaseIDs ...string) []registers.DecodedValue {
+	total := 0.0
+	found := false
+	var updatedAt time.Time
+	for _, phaseID := range phaseIDs {
+		phase, ok := index[phaseID]
+		if !ok {
+			continue
+		}
+		value, ok := numericValue(phase)
+		if !ok {
+			continue
+		}
+		total += value
+		found = true
+		if phase.UpdatedAt.After(updatedAt) {
+			updatedAt = phase.UpdatedAt
+		}
+	}
+	if !found {
+		return nil
+	}
+
+	rounded := int64(math.Round(total))
+	return []registers.DecodedValue{{
+		ID:          id,
+		Name:        name,
+		Address:     address,
+		Group:       registers.GroupFast,
+		Component:   "sensor",
+		Entity:      "diagnostic",
+		Unit:        "W",
+		DeviceClass: "power",
+		StateClass:  "measurement",
+		Icon:        icon,
+		Raw:         rounded,
+		Value:       rounded,
+		Rendered:    strconv.FormatInt(rounded, 10),
+		UpdatedAt:   updatedAt,
+	}}
 }
 
 func batteryEnergyTelemetry(index map[string]registers.DecodedValue) []registers.DecodedValue {

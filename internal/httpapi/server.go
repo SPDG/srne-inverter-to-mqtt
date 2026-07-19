@@ -74,8 +74,13 @@ func (h *Handler) handleHealth(w http.ResponseWriter, _ *http.Request) {
 func (h *Handler) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	cfg := h.store.GetConfig()
 	mode, _ := cfg.Serial.ConnectionMode()
+	inverterType, _ := cfg.Device.NormalizedInverterType()
 	snapshot := h.status.GetStateSnapshot()
-	snapshot.Telemetry = registers.MergeWriteOnlyControls(snapshot.Telemetry, time.Now().UTC())
+	snapshot.Telemetry = registers.MergeWriteOnlyControlsForCatalog(
+		snapshot.Telemetry,
+		time.Now().UTC(),
+		registers.CatalogForInverterType(inverterType),
+	)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"build": h.build,
@@ -89,6 +94,7 @@ func (h *Handler) handleStatus(w http.ResponseWriter, _ *http.Request) {
 		"device": map[string]any{
 			"name":            cfg.Device.Name,
 			"slaveId":         cfg.Device.SlaveID,
+			"inverterType":    inverterType,
 			"port":            cfg.Serial.Port,
 			"networkProtocol": mode,
 		},

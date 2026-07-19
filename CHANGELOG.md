@@ -6,11 +6,27 @@ The format is based on Keep a Changelog and the project uses Git tags for releas
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-19
+
 ### Added
 
-- Release-ready embedded web panel with light and dark themes.
-- Home Assistant MQTT Discovery for telemetry and writable controls.
-- Linux CI and tagged release workflows.
+- Transparent RTU-over-TCP and Modbus TCP gateway transports.
+- Configurable single-phase and three-phase inverter profiles.
+- Three-phase load and grid telemetry, dual-PV string telemetry, and aggregate power sensors.
+- SPI-12K-H3P battery, charging, source, bypass, and grid export controls.
+- Home Assistant controls and generated dashboard YAML for the new telemetry and settings.
+
+### Changed
+
+- Critical power and BMS charge-limit values are polled more frequently.
+- Writable register updates are read back and verified after Modbus writes.
+- Charge-current bounds now follow the selected inverter profile.
+
+### Fixed
+
+- Control form edits are preserved while live telemetry refreshes.
+- Numeric controls display engineering values instead of raw scaled register values.
+- Three-phase load and grid power are calculated from their phase registers.
 
 ## [0.1.0] - 2026-03-28
 

@@ -28,7 +28,6 @@ type Service struct {
 	provider ConfigProvider
 	state    *state.Store
 	build    buildinfo.Info
-	catalog  []registers.Register
 
 	mu             sync.Mutex
 	key            string
@@ -45,7 +44,6 @@ func NewService(provider ConfigProvider, runtimeState *state.Store, build buildi
 		provider:      provider,
 		state:         runtimeState,
 		build:         build,
-		catalog:       registers.Catalog(),
 		lastPublished: make(map[string]string),
 	}
 }
@@ -207,7 +205,7 @@ func (s *Service) publishAvailability(cfg config.Config, payload string) error {
 
 func (s *Service) publishDiscovery(cfg config.Config) error {
 	deviceID := sanitizeID(cfg.Device.Name)
-	for _, reg := range s.catalog {
+	for _, reg := range catalogForConfig(cfg) {
 		sensorConfigTopic := discoveryTopic(cfg, "sensor", deviceID, reg.ID)
 		if reg.WriteOnly {
 			if err := s.publish(cfg, sensorConfigTopic, "", true); err != nil {
@@ -317,7 +315,7 @@ func (s *Service) subscribeCommands(client paho.Client, cfg config.Config) error
 	subscriptions := make(map[string]byte)
 	routes := make(map[string]registers.Register)
 
-	for _, reg := range s.catalog {
+	for _, reg := range catalogForConfig(cfg) {
 		if !reg.Writable {
 			continue
 		}
@@ -482,14 +480,24 @@ func (s *Service) resetClient(reason string, expected paho.Client) {
 }
 
 func mqttKey(cfg config.Config) string {
-	return fmt.Sprintf("%s|%s|%s|%s|%s|%t",
+	inverterType, _ := cfg.Device.NormalizedInverterType()
+	return fmt.Sprintf("%s|%s|%s|%s|%s|%t|%s",
 		cfg.MQTT.Broker,
 		cfg.MQTT.ClientID,
 		cfg.MQTT.Username,
 		cfg.MQTT.TopicPrefix,
 		cfg.MQTT.DiscoveryPrefix,
 		cfg.MQTT.Retain,
+		inverterType,
 	)
+}
+
+func catalogForConfig(cfg config.Config) []registers.Register {
+	inverterType, err := cfg.Device.NormalizedInverterType()
+	if err != nil {
+		inverterType = registers.InverterTypeSinglePhase
+	}
+	return registers.CatalogForInverterType(inverterType)
 }
 
 func availabilityTopic(cfg config.Config) string {

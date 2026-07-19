@@ -33,21 +33,43 @@ func TestValidateBatteryDischargeThresholdsFromSnapshot(t *testing.T) {
 		state: state.New(),
 	}
 	service.state.UpsertTelemetry([]registers.DecodedValue{
-		{ID: "battery_discharge_stop", Raw: 20},
-		{ID: "battery_discharge_start", Raw: 95},
+		{ID: "battery_discharge_cutoff_soc", Raw: 15},
+		{ID: "battery_low_soc_alarm", Raw: 20},
+		{ID: "battery_discharge_stop", Raw: 10},
+		{ID: "battery_discharge_start", Raw: 25},
 	})
 
+	cutoffReg, _ := registers.FindByID("battery_discharge_cutoff_soc")
+	alarmReg, _ := registers.FindByID("battery_low_soc_alarm")
 	stopReg, _ := registers.FindByID("battery_discharge_stop")
 	startReg, _ := registers.FindByID("battery_discharge_start")
 
-	if err := service.validateWriteLocked(config.Config{}, stopReg, 96); err == nil {
+	if err := service.validateWriteLocked(config.Config{}, cutoffReg, 20); err == nil {
+		t.Fatal("expected discharge cut-off versus low SOC alarm validation error")
+	}
+	if err := service.validateWriteLocked(config.Config{}, alarmReg, 15); err == nil {
+		t.Fatal("expected low SOC alarm versus discharge cut-off validation error")
+	}
+	if err := service.validateWriteLocked(config.Config{}, alarmReg, 25); err == nil {
+		t.Fatal("expected low SOC alarm validation error")
+	}
+	if err := service.validateWriteLocked(config.Config{}, stopReg, 26); err == nil {
 		t.Fatal("expected stop threshold validation error")
 	}
-	if err := service.validateWriteLocked(config.Config{}, startReg, 15); err == nil {
+	if err := service.validateWriteLocked(config.Config{}, startReg, 9); err == nil {
 		t.Fatal("expected start threshold validation error")
 	}
-	if err := service.validateWriteLocked(config.Config{}, stopReg, 20); err != nil {
+	if err := service.validateWriteLocked(config.Config{}, cutoffReg, 15); err != nil {
+		t.Fatalf("unexpected cut-off validation error: %v", err)
+	}
+	if err := service.validateWriteLocked(config.Config{}, alarmReg, 20); err != nil {
+		t.Fatalf("unexpected low SOC alarm validation error: %v", err)
+	}
+	if err := service.validateWriteLocked(config.Config{}, stopReg, 10); err != nil {
 		t.Fatalf("unexpected stop validation error: %v", err)
+	}
+	if err := service.validateWriteLocked(config.Config{}, startReg, 20); err == nil {
+		t.Fatal("expected start threshold versus low SOC alarm validation error")
 	}
 	if err := service.validateWriteLocked(config.Config{}, startReg, 25); err != nil {
 		t.Fatalf("unexpected start validation error: %v", err)

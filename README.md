@@ -3,13 +3,14 @@
 [![ci](https://github.com/SPDG/srne-inverter-to-mqtt/actions/workflows/ci.yml/badge.svg)](https://github.com/SPDG/srne-inverter-to-mqtt/actions/workflows/ci.yml)
 [![release](https://github.com/SPDG/srne-inverter-to-mqtt/actions/workflows/release.yml/badge.svg)](https://github.com/SPDG/srne-inverter-to-mqtt/actions/workflows/release.yml)
 
-Linux-first single-binary bridge for polling an SRNE inverter over local Modbus RTU and publishing live telemetry and writable settings to Home Assistant over MQTT.
+Linux-first single-binary bridge for polling SRNE inverters over Modbus RTU or TCP and publishing live telemetry and writable settings to Home Assistant over MQTT.
 
 ## Highlights
 
 - single Go binary with embedded web UI,
 - YAML-backed configuration with no external database,
-- local Modbus RTU polling over USB serial,
+- Modbus RTU, transparent RTU-over-TCP, and Modbus TCP gateway transports,
+- single-phase and three-phase inverter profiles,
 - Home Assistant MQTT Discovery for telemetry and writable controls,
 - built-in control panel with live telemetry, safe writes, and serial port discovery,
 - GitHub Actions workflows for CI and tagged releases on Linux.
@@ -30,11 +31,11 @@ Linux-first single-binary bridge for polling an SRNE inverter over local Modbus 
 
 ## What it does
 
-The service runs next to the inverter, talks to it over Modbus RTU, and removes the need for unstable USB-over-IP serial forwarding into Home Assistant.
+The service can run next to the inverter over local USB serial or connect to a serial-to-Ethernet gateway. It removes the need for USB-over-IP forwarding into Home Assistant.
 
 Current scope:
 
-- polls a practical SRNE MVP register set,
+- polls profile-specific SRNE register sets, including per-phase and dual-PV telemetry on supported three-phase models,
 - exposes writable inverter settings through the web panel,
 - publishes telemetry to MQTT state topics,
 - publishes Home Assistant Discovery for both read-only sensors and writable `select` / `number` controls,

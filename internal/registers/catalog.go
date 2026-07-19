@@ -17,6 +17,11 @@ const (
 	GroupSlow PollGroup = "slow"
 )
 
+const (
+	InverterTypeSinglePhase = "single_phase"
+	InverterTypeThreePhase  = "three_phase"
+)
+
 type ValueType string
 
 const (
@@ -96,6 +101,272 @@ type ReadRange struct {
 }
 
 func Catalog() []Register {
+	return CatalogForInverterType(InverterTypeSinglePhase)
+}
+
+func CatalogForInverterType(inverterType string) []Register {
+	catalog := baseCatalog()
+	if normalizeInverterType(inverterType) != InverterTypeThreePhase {
+		return catalog
+	}
+
+	return threePhaseCatalog(catalog)
+}
+
+func normalizeInverterType(inverterType string) string {
+	switch strings.ToLower(strings.TrimSpace(inverterType)) {
+	case "three_phase", "three-phase", "three", "3p":
+		return InverterTypeThreePhase
+	default:
+		return InverterTypeSinglePhase
+	}
+}
+
+func threePhaseCatalog(catalog []Register) []Register {
+	filtered := make([]Register, 0, len(catalog)+12)
+	for _, reg := range catalog {
+		switch reg.ID {
+		case "pv_voltage", "pv_current", "pv_power", "load_power", "load_current", "load_apparent_power", "grid_power":
+			continue
+		case "pv_charge_current_setup", "maximum_charge_current":
+			reg.WriteMax = 260
+		case "mains_charge_current_limit":
+			reg.WriteMax = 120
+		default:
+		}
+		filtered = append(filtered, reg)
+	}
+
+	filtered = append(filtered,
+		powerSumRegister("pv_power", "PV Power", 0xFFFA, "mdi:white-balance-sunny"),
+		pvVoltageRegister("pv1_voltage", "PV1 Voltage", 0x0107),
+		pvCurrentRegister("pv1_current", "PV1 Current", 0x0108),
+		pvPowerRegister("pv1_power", "PV1 Power", 0x0109),
+		pvVoltageRegister("pv2_voltage", "PV2 Voltage", 0x010F),
+		pvCurrentRegister("pv2_current", "PV2 Current", 0x0110),
+		pvPowerRegister("pv2_power", "PV2 Power", 0x0111),
+		powerSumRegister("load_power", "Load Power", 0xFFF8, "mdi:home-lightning-bolt-outline"),
+		powerSumRegister("grid_power", "Grid Power", 0xFFF9, "mdi:transmission-tower"),
+		phaseCurrentRegister("load_current_phase_a", "Load Current Phase A", 0x0219),
+		phasePowerRegister("load_power_phase_a", "Load Power Phase A", 0x021B, 1, "mdi:home-lightning-bolt-outline"),
+		phaseApparentPowerRegister("load_apparent_power_phase_a", "Load Apparent Power Phase A", 0x021C),
+		phaseCurrentRegister("load_current_phase_b", "Load Current Phase B", 0x0230),
+		phaseCurrentRegister("load_current_phase_c", "Load Current Phase C", 0x0231),
+		phasePowerRegister("load_power_phase_b", "Load Power Phase B", 0x0232, 1, "mdi:home-lightning-bolt-outline"),
+		phasePowerRegister("load_power_phase_c", "Load Power Phase C", 0x0233, 1, "mdi:home-lightning-bolt-outline"),
+		phasePowerRegister("grid_power_phase_a", "Grid Power Phase A", 0x023A, -1, "mdi:transmission-tower"),
+		phasePowerRegister("grid_power_phase_b", "Grid Power Phase B", 0x023B, -1, "mdi:transmission-tower"),
+		phasePowerRegister("grid_power_phase_c", "Grid Power Phase C", 0x023C, -1, "mdi:transmission-tower"),
+		gridOperatingModeRegister(),
+		onGridMaxPowerRegister(),
+		zeroExportPowerRegister(),
+	)
+
+	return filtered
+}
+
+func gridOperatingModeRegister() Register {
+	return Register{
+		ID:        "grid_operating_mode",
+		Name:      "Grid Operating Mode",
+		Address:   0xE037,
+		Count:     1,
+		Type:      TypeUint16,
+		Precision: 0,
+		Icon:      "mdi:transmission-tower-export",
+		Component: "sensor",
+		Group:     GroupSlow,
+		Entity:    "config",
+		Writable:  true,
+		WriteMin:  0,
+		WriteMax:  3,
+		WriteStep: 1,
+		Enum: map[int64]string{
+			0: "Disabled (DIS)",
+			1: "On-grid Export (ON GRD)",
+			2: "Zero Export (AC Output)",
+			3: "Zero Export (AC Input)",
+		},
+	}
+}
+
+func onGridMaxPowerRegister() Register {
+	return Register{
+		ID:          "on_grid_max_power",
+		Name:        "On-grid Maximum Export Power",
+		Address:     0xE400,
+		Count:       1,
+		Type:        TypeUint16,
+		Scale:       1,
+		Precision:   0,
+		Unit:        "W",
+		DeviceClass: "power",
+		Icon:        "mdi:transmission-tower-export",
+		Component:   "sensor",
+		Group:       GroupSlow,
+		Entity:      "config",
+		Writable:    true,
+		WriteMin:    0,
+		WriteMax:    12000,
+		WriteStep:   100,
+	}
+}
+
+func zeroExportPowerRegister() Register {
+	return Register{
+		ID:          "zero_export_power",
+		Name:        "Zero-export Target Power",
+		Address:     0xE42C,
+		Count:       1,
+		Type:        TypeUint16,
+		Scale:       1,
+		Precision:   0,
+		Unit:        "W",
+		DeviceClass: "power",
+		Icon:        "mdi:transmission-tower-off",
+		Component:   "sensor",
+		Group:       GroupSlow,
+		Entity:      "config",
+		Writable:    true,
+		WriteMin:    0,
+		WriteMax:    500,
+		WriteStep:   1,
+	}
+}
+
+func pvVoltageRegister(id, name string, address uint16) Register {
+	return Register{
+		ID:          id,
+		Name:        name,
+		Address:     address,
+		Count:       1,
+		Type:        TypeUint16,
+		Scale:       0.1,
+		Precision:   1,
+		Unit:        "V",
+		DeviceClass: "voltage",
+		StateClass:  "measurement",
+		Icon:        "mdi:solar-power",
+		Component:   "sensor",
+		Group:       GroupFast,
+		Entity:      "diagnostic",
+	}
+}
+
+func pvCurrentRegister(id, name string, address uint16) Register {
+	return Register{
+		ID:          id,
+		Name:        name,
+		Address:     address,
+		Count:       1,
+		Type:        TypeUint16,
+		Scale:       0.1,
+		Precision:   1,
+		Unit:        "A",
+		DeviceClass: "current",
+		StateClass:  "measurement",
+		Icon:        "mdi:solar-power",
+		Component:   "sensor",
+		Group:       GroupFast,
+		Entity:      "diagnostic",
+	}
+}
+
+func pvPowerRegister(id, name string, address uint16) Register {
+	return Register{
+		ID:          id,
+		Name:        name,
+		Address:     address,
+		Count:       1,
+		Type:        TypeUint16,
+		Scale:       1,
+		Precision:   0,
+		Unit:        "W",
+		DeviceClass: "power",
+		StateClass:  "measurement",
+		Icon:        "mdi:white-balance-sunny",
+		Component:   "sensor",
+		Group:       GroupFast,
+		Entity:      "diagnostic",
+	}
+}
+
+func powerSumRegister(id, name string, address uint16, icon string) Register {
+	return Register{
+		ID:          id,
+		Name:        name,
+		Address:     address,
+		Count:       1,
+		Type:        TypeUint16,
+		Synthetic:   true,
+		Scale:       1,
+		Precision:   0,
+		Unit:        "W",
+		DeviceClass: "power",
+		StateClass:  "measurement",
+		Icon:        icon,
+		Component:   "sensor",
+		Group:       GroupFast,
+		Entity:      "diagnostic",
+	}
+}
+
+func phasePowerRegister(id, name string, address uint16, scale float64, icon string) Register {
+	return Register{
+		ID:          id,
+		Name:        name,
+		Address:     address,
+		Count:       1,
+		Type:        TypeInt16,
+		Scale:       scale,
+		Precision:   0,
+		Unit:        "W",
+		DeviceClass: "power",
+		StateClass:  "measurement",
+		Icon:        icon,
+		Component:   "sensor",
+		Group:       GroupFast,
+		Entity:      "diagnostic",
+	}
+}
+
+func phaseCurrentRegister(id, name string, address uint16) Register {
+	return Register{
+		ID:          id,
+		Name:        name,
+		Address:     address,
+		Count:       1,
+		Type:        TypeUint16,
+		Scale:       0.1,
+		Precision:   1,
+		Unit:        "A",
+		DeviceClass: "current",
+		StateClass:  "measurement",
+		Icon:        "mdi:current-ac",
+		Component:   "sensor",
+		Group:       GroupFast,
+		Entity:      "diagnostic",
+	}
+}
+
+func phaseApparentPowerRegister(id, name string, address uint16) Register {
+	return Register{
+		ID:        id,
+		Name:      name,
+		Address:   address,
+		Count:     1,
+		Type:      TypeUint16,
+		Scale:     1,
+		Precision: 0,
+		Unit:      "VA",
+		Icon:      "mdi:flash-outline",
+		Component: "sensor",
+		Group:     GroupSlow,
+		Entity:    "diagnostic",
+	}
+}
+
+func baseCatalog() []Register {
 	return []Register{
 		{
 			ID:          "battery_soc",
@@ -544,8 +815,84 @@ func Catalog() []Register {
 			Entity:    "config",
 		},
 		{
+			ID:          "battery_discharge_cutoff_soc",
+			Name:        "Battery Discharge Cut-off SOC",
+			Address:     0xE00F,
+			Count:       1,
+			Type:        TypeUint16,
+			Scale:       1,
+			Precision:   0,
+			Unit:        "%",
+			DeviceClass: "battery",
+			Icon:        "mdi:battery-off-outline",
+			Component:   "sensor",
+			Group:       GroupSlow,
+			Entity:      "config",
+			Writable:    true,
+			WriteMin:    0,
+			WriteMax:    100,
+			WriteStep:   1,
+		},
+		{
+			ID:          "charge_termination_current",
+			Name:        "Charge Termination Current",
+			Address:     0xE01C,
+			Count:       1,
+			Type:        TypeUint16,
+			Scale:       0.1,
+			Precision:   1,
+			Unit:        "A",
+			DeviceClass: "current",
+			Icon:        "mdi:battery-charging-outline",
+			Component:   "sensor",
+			Group:       GroupSlow,
+			Entity:      "config",
+			Writable:    true,
+			WriteMin:    0,
+			WriteMax:    10,
+			WriteStep:   0.1,
+		},
+		{
+			ID:          "battery_charge_cutoff_soc",
+			Name:        "Battery Charge Cut-off SOC",
+			Address:     0xE01D,
+			Count:       1,
+			Type:        TypeUint16,
+			Scale:       1,
+			Precision:   0,
+			Unit:        "%",
+			DeviceClass: "battery",
+			Icon:        "mdi:battery-check-outline",
+			Component:   "sensor",
+			Group:       GroupSlow,
+			Entity:      "config",
+			Writable:    true,
+			WriteMin:    0,
+			WriteMax:    100,
+			WriteStep:   1,
+		},
+		{
+			ID:          "battery_low_soc_alarm",
+			Name:        "Battery Low SOC Alarm",
+			Address:     0xE01E,
+			Count:       1,
+			Type:        TypeUint16,
+			Scale:       1,
+			Precision:   0,
+			Unit:        "%",
+			DeviceClass: "battery",
+			Icon:        "mdi:battery-alert-variant-outline",
+			Component:   "sensor",
+			Group:       GroupSlow,
+			Entity:      "config",
+			Writable:    true,
+			WriteMin:    0,
+			WriteMax:    100,
+			WriteStep:   1,
+		},
+		{
 			ID:          "battery_discharge_stop",
-			Name:        "Battery Discharge Stop",
+			Name:        "Switch to Utility SOC",
 			Address:     0xE01F,
 			Count:       1,
 			Type:        TypeUint16,
@@ -564,7 +911,7 @@ func Catalog() []Register {
 		},
 		{
 			ID:          "battery_discharge_start",
-			Name:        "Battery Discharge Start",
+			Name:        "Switch to Inverter SOC",
 			Address:     0xE020,
 			Count:       1,
 			Type:        TypeUint16,
@@ -580,6 +927,27 @@ func Catalog() []Register {
 			WriteMin:    0,
 			WriteMax:    100,
 			WriteStep:   1,
+		},
+		{
+			ID:        "bms_charge_limit_mode",
+			Name:      "BMS Charge Limit Mode",
+			Address:   0xE025,
+			Count:     1,
+			Type:      TypeUint16,
+			Precision: 0,
+			Icon:      "mdi:battery-sync",
+			Component: "sensor",
+			Group:     GroupSlow,
+			Entity:    "config",
+			Writable:  true,
+			WriteMin:  0,
+			WriteMax:  2,
+			WriteStep: 1,
+			Enum: map[int64]string{
+				0: "Setting",
+				1: "BMS",
+				2: "Inverter Logic",
+			},
 		},
 		{
 			ID:        "output_source_priority",
@@ -619,6 +987,25 @@ func Catalog() []Register {
 			Writable:    true,
 			WriteMin:    0,
 			WriteMax:    100,
+			WriteStep:   0.1,
+		},
+		{
+			ID:          "maximum_charge_current",
+			Name:        "Maximum Charge Current",
+			Address:     0xE20A,
+			Count:       1,
+			Type:        TypeUint16,
+			Scale:       0.1,
+			Precision:   1,
+			Unit:        "A",
+			DeviceClass: "current",
+			Icon:        "mdi:battery-charging-high",
+			Component:   "sensor",
+			Group:       GroupFast,
+			Entity:      "config",
+			Writable:    true,
+			WriteMin:    0,
+			WriteMax:    150,
 			WriteStep:   0.1,
 		},
 		{
@@ -675,10 +1062,143 @@ func Catalog() []Register {
 			Component: "sensor",
 			Group:     GroupSlow,
 			Entity:    "config",
+			Writable:  true,
+			WriteMin:  0,
+			WriteMax:  1,
+			WriteStep: 1,
 			Enum: map[int64]string{
 				0: "Disabled",
 				1: "Enabled",
 			},
+		},
+		{
+			ID:        "overload_auto_restart",
+			Name:      "Overload Auto Restart",
+			Address:   0xE20D,
+			Count:     1,
+			Type:      TypeUint16,
+			Precision: 0,
+			Icon:      "mdi:restart-alert",
+			Component: "sensor",
+			Group:     GroupSlow,
+			Entity:    "config",
+			Writable:  true,
+			WriteMin:  0,
+			WriteMax:  1,
+			WriteStep: 1,
+			Enum: map[int64]string{
+				0: "Disabled",
+				1: "Enabled",
+			},
+		},
+		{
+			ID:        "overtemperature_auto_restart",
+			Name:      "Overtemperature Auto Restart",
+			Address:   0xE20E,
+			Count:     1,
+			Type:      TypeUint16,
+			Precision: 0,
+			Icon:      "mdi:thermometer-alert",
+			Component: "sensor",
+			Group:     GroupSlow,
+			Entity:    "config",
+			Writable:  true,
+			WriteMin:  0,
+			WriteMax:  1,
+			WriteStep: 1,
+			Enum: map[int64]string{
+				0: "Disabled",
+				1: "Enabled",
+			},
+		},
+		{
+			ID:        "buzzer_alarm",
+			Name:      "Buzzer Alarm",
+			Address:   0xE210,
+			Count:     1,
+			Type:      TypeUint16,
+			Precision: 0,
+			Icon:      "mdi:volume-high",
+			Component: "sensor",
+			Group:     GroupSlow,
+			Entity:    "config",
+			Writable:  true,
+			WriteMin:  0,
+			WriteMax:  1,
+			WriteStep: 1,
+			Enum: map[int64]string{
+				0: "Disabled",
+				1: "Enabled",
+			},
+		},
+		{
+			ID:        "source_change_alert",
+			Name:      "Source Change Alert",
+			Address:   0xE211,
+			Count:     1,
+			Type:      TypeUint16,
+			Precision: 0,
+			Icon:      "mdi:bell-alert-outline",
+			Component: "sensor",
+			Group:     GroupSlow,
+			Entity:    "config",
+			Writable:  true,
+			WriteMin:  0,
+			WriteMax:  1,
+			WriteStep: 1,
+			Enum: map[int64]string{
+				0: "Disabled",
+				1: "Enabled",
+			},
+		},
+		{
+			ID:        "overload_bypass",
+			Name:      "Bypass on Overload",
+			Address:   0xE212,
+			Count:     1,
+			Type:      TypeUint16,
+			Precision: 0,
+			Icon:      "mdi:electric-switch",
+			Component: "sensor",
+			Group:     GroupSlow,
+			Entity:    "config",
+			Writable:  true,
+			WriteMin:  0,
+			WriteMax:  1,
+			WriteStep: 1,
+			Enum: map[int64]string{
+				0: "Disabled",
+				1: "Enabled",
+			},
+		},
+		{
+			ID:        "bms_communication_enable",
+			Name:      "BMS Communication Enable",
+			Address:   0xE215,
+			Count:     1,
+			Type:      TypeUint16,
+			Precision: 0,
+			Icon:      "mdi:battery-sync-outline",
+			Component: "sensor",
+			Group:     GroupSlow,
+			Entity:    "config",
+			Enum: map[int64]string{
+				0: "Disabled",
+				1: "RS485 BMS",
+				2: "CAN BMS",
+			},
+		},
+		{
+			ID:        "bms_protocol",
+			Name:      "BMS Protocol",
+			Address:   0xE21B,
+			Count:     1,
+			Type:      TypeUint16,
+			Precision: 0,
+			Icon:      "mdi:protocol",
+			Component: "sensor",
+			Group:     GroupSlow,
+			Entity:    "config",
 		},
 		{
 			ID:          "dc_to_dc_temperature",
@@ -1097,7 +1617,11 @@ func Catalog() []Register {
 }
 
 func ByGroup(group PollGroup) []Register {
-	catalog := Catalog()
+	return ByGroupForInverterType(group, InverterTypeSinglePhase)
+}
+
+func ByGroupForInverterType(group PollGroup, inverterType string) []Register {
+	catalog := CatalogForInverterType(inverterType)
 	filtered := make([]Register, 0, len(catalog))
 	for _, reg := range catalog {
 		if reg.Group == group && !reg.WriteOnly && !reg.Synthetic {
@@ -1113,22 +1637,51 @@ func ByGroup(group PollGroup) []Register {
 }
 
 func BuildReadPlan(group PollGroup) []ReadRange {
-	return BuildReadPlanForRegisters(ByGroup(group))
+	return BuildReadPlanForInverterType(group, InverterTypeSinglePhase)
+}
+
+func BuildReadPlanForInverterType(group PollGroup, inverterType string) []ReadRange {
+	return BuildReadPlanForRegisters(ByGroupForInverterType(group, inverterType))
 }
 
 func BuildCriticalFastReadPlan() []ReadRange {
+	return BuildCriticalFastReadPlanForInverterType(InverterTypeSinglePhase)
+}
+
+func BuildCriticalFastReadPlanForInverterType(inverterType string) []ReadRange {
 	critical := map[string]struct{}{
 		"battery_soc":     {},
 		"battery_voltage": {},
 		"battery_current": {},
-		"pv_voltage":      {},
-		"pv_current":      {},
-		"pv_power":        {},
-		"load_power":      {},
+		// In BMS charge-limit mode this value can change dynamically and
+		// directly caps usable PV charging power.
+		"maximum_charge_current": {},
+	}
+	if normalizeInverterType(inverterType) == InverterTypeThreePhase {
+		critical["pv1_voltage"] = struct{}{}
+		critical["pv1_current"] = struct{}{}
+		critical["pv1_power"] = struct{}{}
+		critical["pv2_voltage"] = struct{}{}
+		critical["pv2_current"] = struct{}{}
+		critical["pv2_power"] = struct{}{}
+		critical["load_current_phase_a"] = struct{}{}
+		critical["load_current_phase_b"] = struct{}{}
+		critical["load_current_phase_c"] = struct{}{}
+		critical["load_power_phase_a"] = struct{}{}
+		critical["load_power_phase_b"] = struct{}{}
+		critical["load_power_phase_c"] = struct{}{}
+		critical["grid_power_phase_a"] = struct{}{}
+		critical["grid_power_phase_b"] = struct{}{}
+		critical["grid_power_phase_c"] = struct{}{}
+	} else {
+		critical["pv_voltage"] = struct{}{}
+		critical["pv_current"] = struct{}{}
+		critical["pv_power"] = struct{}{}
+		critical["load_power"] = struct{}{}
 	}
 
 	filtered := make([]Register, 0, len(critical))
-	for _, reg := range ByGroup(GroupFast) {
+	for _, reg := range ByGroupForInverterType(GroupFast, inverterType) {
 		if _, ok := critical[reg.ID]; ok {
 			filtered = append(filtered, reg)
 		}
@@ -1311,13 +1864,17 @@ func (r Register) ControlValue(now time.Time) DecodedValue {
 }
 
 func MergeWriteOnlyControls(values []DecodedValue, now time.Time) []DecodedValue {
+	return MergeWriteOnlyControlsForCatalog(values, now, Catalog())
+}
+
+func MergeWriteOnlyControlsForCatalog(values []DecodedValue, now time.Time, catalog []Register) []DecodedValue {
 	seen := make(map[string]struct{}, len(values))
 	for _, value := range values {
 		seen[value.ID] = struct{}{}
 	}
 
 	merged := append([]DecodedValue(nil), values...)
-	for _, reg := range Catalog() {
+	for _, reg := range catalog {
 		if !reg.Writable || !reg.WriteOnly {
 			continue
 		}
@@ -1388,7 +1945,11 @@ func writeOptions(r Register) []Option {
 }
 
 func FindByID(id string) (Register, bool) {
-	for _, reg := range Catalog() {
+	return FindByIDForInverterType(id, InverterTypeSinglePhase)
+}
+
+func FindByIDForInverterType(id, inverterType string) (Register, bool) {
+	for _, reg := range CatalogForInverterType(inverterType) {
 		if reg.ID == id {
 			return reg, true
 		}

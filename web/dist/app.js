@@ -5,6 +5,7 @@ let latestStatus = null;
 let latestConfig = null;
 let refreshTimer = null;
 let haYamlMode = localStorage.getItem("srneHaYamlMode") || "dashboard";
+const controlDrafts = new Map();
 
 const els = {
   rail: document.getElementById("rail"),
@@ -32,6 +33,7 @@ const els = {
   configForm: document.getElementById("config-form"),
   deviceName: document.getElementById("device-name"),
   deviceSlaveID: document.getElementById("device-slave-id"),
+  deviceInverterType: document.getElementById("device-inverter-type"),
   serialPort: document.getElementById("serial-port"),
   serialNetworkProtocol: document.getElementById("serial-network-protocol"),
   serialBaudRate: document.getElementById("serial-baud-rate"),
@@ -60,10 +62,10 @@ async function fetchJSON(url, options = {}) {
   return payload;
 }
 
-async function loadStatus() {
+async function loadStatus({ forceControls = false } = {}) {
   const status = await fetchJSON("/api/v1/status");
   latestStatus = status;
-  renderStatus(status);
+  renderStatus(status, { forceControls });
 }
 
 async function loadPorts() {
@@ -77,7 +79,7 @@ async function loadConfig() {
   fillConfigForm(cfg);
 }
 
-function renderStatus(status) {
+function renderStatus(status, { forceControls = false } = {}) {
   const telemetry = status.telemetry || [];
   const byId = Object.fromEntries(telemetry.map((item) => [item.id, item]));
 
@@ -87,7 +89,10 @@ function renderStatus(status) {
   renderHeroKpis(byId);
   renderEnergy(byId);
   renderTelemetry(telemetry);
-  renderControls(telemetry);
+  reconcileControlDrafts(telemetry);
+  if (forceControls || (!isControlInteractionActive() && controlDrafts.size === 0)) {
+    renderControls(telemetry);
+  }
   renderSettings(status);
   renderHAConfig(status);
 }
@@ -297,14 +302,16 @@ function renderWriteControl(item) {
     `;
   }
 
+  const serverValue = item.options?.length ? item.raw : item.rendered;
+  const draftValue = controlDrafts.has(item.id) ? controlDrafts.get(item.id) : serverValue;
   if (item.options?.length) {
     const options = item.options.map((option) => {
-      const selected = option.label === item.rendered ? "selected" : "";
+      const selected = String(option.raw) === String(draftValue) ? "selected" : "";
       return `<option value="${option.raw}" ${selected}>${escapeHTML(option.label)}</option>`;
     }).join("");
     return `
       <div class="telemetry-actions">
-        <select data-write-id="${item.id}">${options}</select>
+        <select data-write-id="${item.id}" data-server-value="${escapeAttribute(serverValue)}">${options}</select>
         <button class="action-button" data-write-button="${item.id}" type="button">Apply</button>
       </div>
     `;
@@ -315,24 +322,38 @@ function renderWriteControl(item) {
   const max = Number.isFinite(item.writeMax) ? `max="${item.writeMax}"` : "";
   return `
     <div class="telemetry-actions">
-      <input data-write-id="${item.id}" type="number" step="${step}" ${min} ${max} value="${escapeAttribute(item.rendered)}">
+      <input data-write-id="${item.id}" data-server-value="${escapeAttribute(serverValue)}" type="number" step="${step}" ${min} ${max} value="${escapeAttribute(draftValue)}">
       <button class="action-button" data-write-button="${item.id}" type="button">Apply</button>
     </div>
   `;
 }
 
 function attachWriteHandlers() {
+  document.querySelectorAll("[data-write-id]").forEach((input) => {
+    const rememberDraft = () => {
+      const id = input.getAttribute("data-write-id");
+      if (String(input.value) === String(input.getAttribute("data-server-value"))) {
+        controlDrafts.delete(id);
+        return;
+      }
+      controlDrafts.set(id, input.value);
+    };
+    input.addEventListener("input", rememberDraft);
+    input.addEventListener("change", rememberDraft);
+  });
+
   document.querySelectorAll("[data-write-button]").forEach((button) => {
     button.addEventListener("click", async () => {
       const id = button.getAttribute("data-write-button");
       const input = document.querySelector(`[data-write-id="${id}"]`);
       const forcedValue = button.getAttribute("data-write-value");
-      const confirmMessage = button.getAttribute("data-confirm-message");
       const value = forcedValue ?? input?.value;
       if (value == null) {
         return;
       }
 
+      const confirmMessage = button.getAttribute("data-confirm-message")
+        || confirmationMessageForWrite(id, value, input);
       if (confirmMessage && !window.confirm(confirmMessage)) {
         els.writeResult.textContent = `Write cancelled for ${id}.`;
         return;
@@ -344,13 +365,35 @@ function attachWriteHandlers() {
           method: "POST",
           body: JSON.stringify({ value }),
         });
+        controlDrafts.delete(id);
+        input?.blur();
         els.writeResult.textContent = `Register ${id} written.`;
-        await loadStatus();
+        await loadStatus({ forceControls: true });
       } catch (error) {
         els.writeResult.textContent = error.message;
       }
     });
   });
+}
+
+function reconcileControlDrafts(items) {
+  for (const item of items) {
+    if (!controlDrafts.has(item.id)) {
+      continue;
+    }
+    const serverValue = item.options?.length ? item.raw : item.rendered;
+    if (String(controlDrafts.get(item.id)) === String(serverValue)) {
+      controlDrafts.delete(item.id);
+    }
+  }
+}
+
+function isControlInteractionActive() {
+  const active = document.activeElement;
+  return Boolean(
+    active
+    && (els.controlsGrid.contains(active) || els.maintenanceGrid.contains(active))
+  );
 }
 
 function renderSettings(status) {
@@ -364,6 +407,7 @@ function renderSettings(status) {
     ["Port", status.device?.port ?? "-"],
     ["Network protocol", status.device?.networkProtocol ?? "-"],
     ["Slave ID", status.device?.slaveId ?? "-"],
+    ["Inverter type", status.device?.inverterType ?? "-"],
   ]);
 }
 
@@ -416,16 +460,45 @@ function generateSectionsViewYAML(status) {
     "battery_voltage",
     "battery_current",
     "pv_power",
+    "pv1_power",
+    "pv1_voltage",
+    "pv1_current",
+    "pv2_power",
+    "pv2_voltage",
+    "pv2_current",
     "load_power",
     "grid_power",
+    "load_power_phase_a",
+    "load_power_phase_b",
+    "load_power_phase_c",
+    "grid_power_phase_a",
+    "grid_power_phase_b",
+    "grid_power_phase_c",
     "machine_state",
   ].filter(has);
   const configEntities = [
+    "battery_discharge_cutoff_soc",
+    "charge_termination_current",
+    "battery_charge_cutoff_soc",
+    "battery_low_soc_alarm",
     "battery_discharge_stop",
     "battery_discharge_start",
+    "bms_charge_limit_mode",
+    "bms_communication_enable",
+    "bms_protocol",
+    "grid_operating_mode",
+    "on_grid_max_power",
+    "zero_export_power",
     "output_source_priority",
     "charger_source_priority",
+    "power_saving_mode",
+    "overload_auto_restart",
+    "overtemperature_auto_restart",
+    "buzzer_alarm",
+    "source_change_alert",
+    "overload_bypass",
     "pv_charge_current_setup",
+    "maximum_charge_current",
     "mains_charge_current_limit",
   ].filter(has);
 
@@ -441,6 +514,8 @@ function generateSectionsViewYAML(status) {
     "      - type: heading",
     "        heading: Live power",
     ...["battery_soc", "pv_power", "load_power", "grid_power"].filter(has).flatMap((id) => sensorLine(id)),
+    ...["pv1_power", "pv1_voltage", "pv1_current", "pv2_power", "pv2_voltage", "pv2_current"].filter(has).flatMap((id) => sensorLine(id)),
+    ...["load_power_phase_a", "load_power_phase_b", "load_power_phase_c", "grid_power_phase_a", "grid_power_phase_b", "grid_power_phase_c"].filter(has).flatMap((id) => sensorLine(id)),
     "      - type: history-graph",
     "        title: Power and SOC",
     "        hours_to_show: 24",
@@ -500,6 +575,7 @@ function fillConfigForm(cfg) {
   latestConfig = cfg;
   els.deviceName.value = cfg.device.name;
   els.deviceSlaveID.value = cfg.device.slaveId;
+  els.deviceInverterType.value = cfg.device.inverterType || "single_phase";
   els.serialPort.value = cfg.serial.port;
   els.serialNetworkProtocol.value = cfg.serial.networkProtocol || "rtu";
   els.serialBaudRate.value = cfg.serial.baudRate;
@@ -521,6 +597,7 @@ function collectConfigForm() {
     device: {
       name: els.deviceName.value.trim(),
       slaveId: Number(els.deviceSlaveID.value),
+      inverterType: els.deviceInverterType.value,
     },
     serial: {
       port: els.serialPort.value.trim(),
@@ -686,6 +763,18 @@ function confirmationMessageForControl(item) {
     return "Are you sure you want to reset the inverter controller?";
   }
   return "";
+}
+
+function confirmationMessageForWrite(id, value, input) {
+  if (id !== "grid_operating_mode") {
+    return "";
+  }
+
+  const selectedLabel = input?.options?.[input.selectedIndex]?.textContent || value;
+  if (String(value) === "1") {
+    return "Enable ON-GRID export? Surplus PV energy may be fed into the utility grid. Confirm that the grid connection and operator requirements are satisfied.";
+  }
+  return `Change grid operating mode to "${selectedLabel}"? Power routing may change immediately.`;
 }
 
 function formatUpdatedAt(value) {

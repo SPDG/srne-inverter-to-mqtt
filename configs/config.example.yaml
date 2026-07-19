@@ -1,6 +1,7 @@
 device:
   name: srne-main
   slave_id: 1
+  inverter_type: single_phase
 
 serial:
   port: /dev/ttyUSB0

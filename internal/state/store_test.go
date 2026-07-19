@@ -1,6 +1,7 @@
 package state
 
 import (
+	"strconv"
 	"testing"
 	"time"
 
@@ -186,6 +187,44 @@ func TestSnapshotSkipsDerivedMetricsWithoutTotals(t *testing.T) {
 		if value.ID == "system_energy_losses_total" || value.ID == "system_energy_efficiency_total" {
 			t.Fatalf("unexpected derived metric %s", value.ID)
 		}
+	}
+}
+
+func TestSnapshotIncludesThreePhasePowerSums(t *testing.T) {
+	t.Parallel()
+
+	store := New()
+	now := time.Unix(1711929600, 0).UTC()
+	store.UpsertTelemetry([]registers.DecodedValue{
+		{ID: "pv1_power", Address: 0x0109, Group: registers.GroupFast, Component: "sensor", Entity: "diagnostic", Unit: "W", Value: int64(2873), Rendered: "2873", UpdatedAt: now},
+		{ID: "pv2_power", Address: 0x0111, Group: registers.GroupFast, Component: "sensor", Entity: "diagnostic", Unit: "W", Value: int64(0), Rendered: "0", UpdatedAt: now},
+		{ID: "load_power_phase_a", Address: 0x021B, Group: registers.GroupFast, Component: "sensor", Entity: "diagnostic", Unit: "W", Value: int64(6), Rendered: "6", UpdatedAt: now},
+		{ID: "load_power_phase_b", Address: 0x0232, Group: registers.GroupFast, Component: "sensor", Entity: "diagnostic", Unit: "W", Value: int64(344), Rendered: "344", UpdatedAt: now},
+		{ID: "load_power_phase_c", Address: 0x0233, Group: registers.GroupFast, Component: "sensor", Entity: "diagnostic", Unit: "W", Value: int64(581), Rendered: "581", UpdatedAt: now},
+		{ID: "grid_power_phase_a", Address: 0x023A, Group: registers.GroupFast, Component: "sensor", Entity: "diagnostic", Unit: "W", Value: int64(0), Rendered: "0", UpdatedAt: now},
+		{ID: "grid_power_phase_b", Address: 0x023B, Group: registers.GroupFast, Component: "sensor", Entity: "diagnostic", Unit: "W", Value: int64(10), Rendered: "10", UpdatedAt: now},
+		{ID: "grid_power_phase_c", Address: 0x023C, Group: registers.GroupFast, Component: "sensor", Entity: "diagnostic", Unit: "W", Value: int64(20), Rendered: "20", UpdatedAt: now},
+	})
+
+	snapshot := store.Snapshot()
+	values := make(map[string]registers.DecodedValue, len(snapshot.Telemetry))
+	for _, value := range snapshot.Telemetry {
+		values[value.ID] = value
+	}
+
+	assertPowerValue(t, values["pv_power"], 2873)
+	assertPowerValue(t, values["load_power"], 931)
+	assertPowerValue(t, values["grid_power"], 30)
+}
+
+func assertPowerValue(t *testing.T, value registers.DecodedValue, want int64) {
+	t.Helper()
+	got, ok := value.Value.(int64)
+	if !ok || got != want {
+		t.Fatalf("%s value = %#v, want %d", value.ID, value.Value, want)
+	}
+	if value.Rendered != strconv.FormatInt(want, 10) {
+		t.Fatalf("%s rendered = %q, want %d", value.ID, value.Rendered, want)
 	}
 }
 
