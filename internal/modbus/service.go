@@ -49,7 +49,13 @@ func (s *Service) Run(ctx context.Context) error {
 }
 
 func (s *Service) WriteRegister(id string, value any) error {
-	reg, ok := registers.FindByID(id)
+	cfg := s.provider.GetConfig()
+	inverterType, err := cfg.Device.NormalizedInverterType()
+	if err != nil {
+		return err
+	}
+
+	reg, ok := registers.FindByIDForInverterType(id, inverterType)
 	if !ok {
 		return fmt.Errorf("unknown register %q", id)
 	}
@@ -57,7 +63,6 @@ func (s *Service) WriteRegister(id string, value any) error {
 		return fmt.Errorf("register %q is not writable", id)
 	}
 
-	cfg := s.provider.GetConfig()
 	if strings.TrimSpace(cfg.Serial.Port) == "" {
 		return fmt.Errorf("serial port is empty")
 	}
@@ -115,23 +120,58 @@ func (s *Service) WriteRegister(id string, value any) error {
 	s.state.UpsertTelemetry([]registers.DecodedValue{optimistic})
 
 	payload, err := s.readHoldingWithRetryLocked(client, cfg, reg.Address, reg.Count)
-	if err == nil {
-		words, decodeErr := registers.WordsFromBytes(payload, reg.Count)
-		if decodeErr == nil {
-			decoded, decodeErr := reg.Decode(words[:reg.Count], now)
-			if decodeErr == nil {
-				s.state.UpsertTelemetry([]registers.DecodedValue{decoded})
-				log.Printf("modbus write confirmed by readback id=%s address=0x%04X rendered=%s", reg.ID, reg.Address, decoded.Rendered)
-			}
-		}
+	if err != nil {
+		s.state.SetServiceStatus("modbus", "error", false, err.Error(), time.Time{})
+		return fmt.Errorf("write 0x%04X readback: %w", reg.Address, err)
+	}
+	words, err := registers.WordsFromBytes(payload, reg.Count)
+	if err != nil {
+		s.state.SetServiceStatus("modbus", "error", false, err.Error(), time.Time{})
+		return fmt.Errorf("write 0x%04X readback decode: %w", reg.Address, err)
+	}
+	decoded, err := reg.Decode(words[:reg.Count], now)
+	if err != nil {
+		s.state.SetServiceStatus("modbus", "error", false, err.Error(), time.Time{})
+		return fmt.Errorf("write 0x%04X readback decode: %w", reg.Address, err)
+	}
+	if decoded.Raw != int64(encoded) {
+		err := fmt.Errorf("write 0x%04X readback mismatch: wrote raw %d, read raw %d (%s)", reg.Address, encoded, decoded.Raw, decoded.Rendered)
+		s.state.UpsertTelemetry([]registers.DecodedValue{decoded})
+		s.state.SetServiceStatus("modbus", "error", false, err.Error(), time.Time{})
+		return err
 	}
 
+	s.state.UpsertTelemetry([]registers.DecodedValue{decoded})
+	log.Printf("modbus write confirmed by readback id=%s address=0x%04X rendered=%s", reg.ID, reg.Address, decoded.Rendered)
 	s.state.SetServiceStatus("modbus", "connected", true, "", now)
 	return nil
 }
 
 func (s *Service) validateWriteLocked(cfg config.Config, reg registers.Register, encoded uint16) error {
 	switch reg.ID {
+	case "battery_discharge_cutoff_soc":
+		alarmValue, err := s.currentRegisterRawLocked(cfg, "battery_low_soc_alarm")
+		if err != nil {
+			return err
+		}
+		if encoded >= alarmValue {
+			return fmt.Errorf("battery_discharge_cutoff_soc must be lower than battery_low_soc_alarm (%d%%)", alarmValue)
+		}
+	case "battery_low_soc_alarm":
+		cutoffValue, err := s.currentRegisterRawLocked(cfg, "battery_discharge_cutoff_soc")
+		if err != nil {
+			return err
+		}
+		if encoded <= cutoffValue {
+			return fmt.Errorf("battery_low_soc_alarm must be greater than battery_discharge_cutoff_soc (%d%%)", cutoffValue)
+		}
+		startValue, err := s.currentRegisterRawLocked(cfg, "battery_discharge_start")
+		if err != nil {
+			return err
+		}
+		if encoded >= startValue {
+			return fmt.Errorf("battery_low_soc_alarm must be lower than battery_discharge_start (%d%%)", startValue)
+		}
 	case "battery_discharge_stop":
 		startValue, err := s.currentRegisterRawLocked(cfg, "battery_discharge_start")
 		if err != nil {
@@ -148,6 +188,13 @@ func (s *Service) validateWriteLocked(cfg config.Config, reg registers.Register,
 		if encoded < stopValue {
 			return fmt.Errorf("battery_discharge_start must be greater than or equal to battery_discharge_stop (%d%%)", stopValue)
 		}
+		alarmValue, err := s.currentRegisterRawLocked(cfg, "battery_low_soc_alarm")
+		if err != nil {
+			return err
+		}
+		if encoded <= alarmValue {
+			return fmt.Errorf("battery_discharge_start must be greater than battery_low_soc_alarm (%d%%)", alarmValue)
+		}
 	}
 
 	return nil
@@ -158,7 +205,12 @@ func (s *Service) currentRegisterRawLocked(cfg config.Config, id string) (uint16
 		return value, nil
 	}
 
-	reg, ok := registers.FindByID(id)
+	inverterType, err := cfg.Device.NormalizedInverterType()
+	if err != nil {
+		return 0, err
+	}
+
+	reg, ok := registers.FindByIDForInverterType(id, inverterType)
 	if !ok {
 		return 0, fmt.Errorf("unknown register %q", id)
 	}
@@ -295,8 +347,13 @@ func (s *Service) pollGroup(group registers.PollGroup) {
 		defer s.closeLocked()
 	}
 
-	plan := s.readPlanForGroup(group)
-	values := make([]registers.DecodedValue, 0, len(registers.ByGroup(group)))
+	plan := s.readPlanForGroup(group, cfg)
+	inverterType, err := cfg.Device.NormalizedInverterType()
+	if err != nil {
+		s.state.SetServiceStatus("modbus", "error", false, err.Error(), time.Time{})
+		return
+	}
+	values := make([]registers.DecodedValue, 0, len(registers.ByGroupForInverterType(group, inverterType)))
 	errors := make([]string, 0)
 	openFailures := 0
 
@@ -380,11 +437,15 @@ func shouldReopenPerRange(cfg config.Config) bool {
 	return err != nil || mode == config.ConnectionModeRTU
 }
 
-func (s *Service) readPlanForGroup(group registers.PollGroup) []registers.ReadRange {
-	if group == registers.GroupFast {
-		return registers.BuildCriticalFastReadPlan()
+func (s *Service) readPlanForGroup(group registers.PollGroup, cfg config.Config) []registers.ReadRange {
+	inverterType, err := cfg.Device.NormalizedInverterType()
+	if err != nil {
+		return nil
 	}
-	return registers.BuildReadPlan(group)
+	if group == registers.GroupFast {
+		return registers.BuildCriticalFastReadPlanForInverterType(inverterType)
+	}
+	return registers.BuildReadPlanForInverterType(group, inverterType)
 }
 
 func (s *Service) readHoldingWithRetryLocked(client gomodbus.Client, cfg config.Config, address, count uint16) ([]byte, error) {
