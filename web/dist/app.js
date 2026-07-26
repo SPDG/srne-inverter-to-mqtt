@@ -468,6 +468,13 @@ function generateSectionsViewYAML(status) {
     "pv2_current",
     "load_power",
     "grid_power",
+    "grid_voltage_phase_a",
+    "grid_voltage_phase_b",
+    "grid_voltage_phase_c",
+    "grid_current_phase_a",
+    "grid_current_phase_b",
+    "grid_current_phase_c",
+    "grid_frequency",
     "load_power_phase_a",
     "load_power_phase_b",
     "load_power_phase_c",
@@ -515,7 +522,7 @@ function generateSectionsViewYAML(status) {
     "        heading: Live power",
     ...["battery_soc", "pv_power", "load_power", "grid_power"].filter(has).flatMap((id) => sensorLine(id)),
     ...["pv1_power", "pv1_voltage", "pv1_current", "pv2_power", "pv2_voltage", "pv2_current"].filter(has).flatMap((id) => sensorLine(id)),
-    ...["load_power_phase_a", "load_power_phase_b", "load_power_phase_c", "grid_power_phase_a", "grid_power_phase_b", "grid_power_phase_c"].filter(has).flatMap((id) => sensorLine(id)),
+    ...["load_power_phase_a", "load_power_phase_b", "load_power_phase_c", "grid_power_phase_a", "grid_power_phase_b", "grid_power_phase_c", "grid_voltage_phase_a", "grid_voltage_phase_b", "grid_voltage_phase_c", "grid_current_phase_a", "grid_current_phase_b", "grid_current_phase_c", "grid_frequency"].filter(has).flatMap((id) => sensorLine(id)),
     "      - type: history-graph",
     "        title: Power and SOC",
     "        hours_to_show: 24",
@@ -575,7 +582,10 @@ function fillConfigForm(cfg) {
   latestConfig = cfg;
   els.deviceName.value = cfg.device.name;
   els.deviceSlaveID.value = cfg.device.slaveId;
-  els.deviceInverterType.value = cfg.device.inverterType || "single_phase";
+  const inverterType = cfg.device.inverterType || "single_phase";
+  els.deviceInverterType.value = ["three_phase", "three-phase", "three", "3p"].includes(inverterType)
+    ? "spi_h3p"
+    : inverterType;
   els.serialPort.value = cfg.serial.port;
   els.serialNetworkProtocol.value = cfg.serial.networkProtocol || "rtu";
   els.serialBaudRate.value = cfg.serial.baudRate;

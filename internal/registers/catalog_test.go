@@ -66,13 +66,19 @@ func TestThreePhaseCatalogIncludesPhaseAndPVStringSensors(t *testing.T) {
 		{id: "load_power_phase_b", address: 0x0232},
 		{id: "load_power_phase_c", address: 0x0233},
 		{id: "grid_power", address: 0xFFF9, synthetic: true},
+		{id: "grid_voltage_phase_a", address: 0x0213},
+		{id: "grid_voltage_phase_b", address: 0x022A},
+		{id: "grid_voltage_phase_c", address: 0x022B},
+		{id: "grid_current_phase_a", address: 0x0214},
+		{id: "grid_current_phase_b", address: 0x0238},
+		{id: "grid_current_phase_c", address: 0x0239},
 		{id: "grid_power_phase_a", address: 0x023A},
 		{id: "grid_power_phase_b", address: 0x023B},
 		{id: "grid_power_phase_c", address: 0x023C},
 	}
 
 	for _, tc := range cases {
-		reg, ok := FindByIDForInverterType(tc.id, InverterTypeThreePhase)
+		reg, ok := FindByIDForInverterType(tc.id, InverterTypeSPIH3P)
 		if !ok {
 			t.Fatalf("%s not found", tc.id)
 		}
@@ -88,7 +94,7 @@ func TestThreePhaseCatalogIncludesPhaseAndPVStringSensors(t *testing.T) {
 func TestThreePhaseCatalogReplacesSinglePhasePowerRegisters(t *testing.T) {
 	t.Parallel()
 
-	catalog := CatalogForInverterType(InverterTypeThreePhase)
+	catalog := CatalogForInverterType(InverterTypeSPIH3P)
 	for _, reg := range catalog {
 		if reg.ID == "load_power" && !reg.Synthetic {
 			t.Fatalf("three-phase load_power should be synthetic, got physical address 0x%04X", reg.Address)
@@ -102,16 +108,19 @@ func TestThreePhaseCatalogReplacesSinglePhasePowerRegisters(t *testing.T) {
 	}
 }
 
-func TestGridOperatingModeIsWritableOnlyForThreePhaseProfile(t *testing.T) {
+func TestGridOperatingModeIsWritableOnlyForHESPProfile(t *testing.T) {
 	t.Parallel()
 
 	if _, ok := FindByIDForInverterType("grid_operating_mode", InverterTypeSinglePhase); ok {
 		t.Fatal("grid_operating_mode should not be exposed for the single-phase profile")
 	}
+	if _, ok := FindByIDForInverterType("grid_operating_mode", InverterTypeSPIH3P); ok {
+		t.Fatal("grid_operating_mode should not be exposed for the SPI H3P profile")
+	}
 
-	reg, ok := FindByIDForInverterType("grid_operating_mode", InverterTypeThreePhase)
+	reg, ok := FindByIDForInverterType("grid_operating_mode", InverterTypeHESPSH3)
 	if !ok {
-		t.Fatal("grid_operating_mode not found for the three-phase profile")
+		t.Fatal("grid_operating_mode not found for the HESP SH3 profile")
 	}
 	if !reg.Writable {
 		t.Fatal("grid_operating_mode should be writable")
@@ -121,10 +130,9 @@ func TestGridOperatingModeIsWritableOnlyForThreePhaseProfile(t *testing.T) {
 	}
 
 	expected := map[int64]string{
-		0: "Disabled (DIS)",
-		1: "On-grid Export (ON GRD)",
-		2: "Zero Export (AC Output)",
-		3: "Zero Export (AC Input)",
+		0: "Disabled",
+		1: "Grid-connected Export",
+		2: "Anti-backflow",
 	}
 	for raw, label := range expected {
 		if got := reg.Enum[raw]; got != label {
@@ -139,21 +147,25 @@ func TestThreePhaseCatalogIncludesGridPowerControls(t *testing.T) {
 	cases := []struct {
 		id        string
 		address   uint16
+		writeMin  float64
 		writeMax  float64
 		writeStep float64
 	}{
-		{id: "on_grid_max_power", address: 0xE400, writeMax: 12000, writeStep: 100},
-		{id: "zero_export_power", address: 0xE42C, writeMax: 500, writeStep: 1},
+		{id: "on_grid_max_power", address: 0xE400, writeMin: -100, writeMax: 100, writeStep: 1},
+		{id: "zero_export_power", address: 0xE42C, writeMin: 0, writeMax: 500, writeStep: 1},
 	}
 
 	for _, tc := range cases {
 		if _, ok := FindByIDForInverterType(tc.id, InverterTypeSinglePhase); ok {
 			t.Fatalf("%s should not be exposed for the single-phase profile", tc.id)
 		}
+		if _, ok := FindByIDForInverterType(tc.id, InverterTypeSPIH3P); ok {
+			t.Fatalf("%s should not be exposed for the SPI H3P profile", tc.id)
+		}
 
-		reg, ok := FindByIDForInverterType(tc.id, InverterTypeThreePhase)
+		reg, ok := FindByIDForInverterType(tc.id, InverterTypeHESPSH3)
 		if !ok {
-			t.Fatalf("%s not found for the three-phase profile", tc.id)
+			t.Fatalf("%s not found for the HESP SH3 profile", tc.id)
 		}
 		if !reg.Writable {
 			t.Fatalf("%s should be writable", tc.id)
@@ -161,9 +173,9 @@ func TestThreePhaseCatalogIncludesGridPowerControls(t *testing.T) {
 		if reg.Address != tc.address {
 			t.Fatalf("%s address = 0x%04X, want 0x%04X", tc.id, reg.Address, tc.address)
 		}
-		if reg.WriteMin != 0 || reg.WriteMax != tc.writeMax || reg.WriteStep != tc.writeStep {
-			t.Fatalf("%s write bounds = [%v,%v] step %v, want [0,%v] step %v",
-				tc.id, reg.WriteMin, reg.WriteMax, reg.WriteStep, tc.writeMax, tc.writeStep)
+		if reg.WriteMin != tc.writeMin || reg.WriteMax != tc.writeMax || reg.WriteStep != tc.writeStep {
+			t.Fatalf("%s write bounds = [%v,%v] step %v, want [%v,%v] step %v",
+				tc.id, reg.WriteMin, reg.WriteMax, reg.WriteStep, tc.writeMin, tc.writeMax, tc.writeStep)
 		}
 	}
 }
@@ -186,7 +198,7 @@ func TestThreePhaseCatalogUsesSPI12KChargeCurrentBounds(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s not found for single-phase profile", tc.id)
 		}
-		threePhase, ok := FindByIDForInverterType(tc.id, InverterTypeThreePhase)
+		threePhase, ok := FindByIDForInverterType(tc.id, InverterTypeSPIH3P)
 		if !ok {
 			t.Fatalf("%s not found for three-phase profile", tc.id)
 		}
@@ -202,7 +214,7 @@ func TestThreePhaseCatalogUsesSPI12KChargeCurrentBounds(t *testing.T) {
 func TestThreePhaseCriticalFastReadPlanIncludesPhaseAndPVStringRanges(t *testing.T) {
 	t.Parallel()
 
-	ranges := BuildCriticalFastReadPlanForInverterType(InverterTypeThreePhase)
+	ranges := BuildCriticalFastReadPlanForInverterType(InverterTypeSPIH3P)
 	expected := []struct {
 		start uint16
 		count uint16
@@ -210,10 +222,12 @@ func TestThreePhaseCriticalFastReadPlanIncludesPhaseAndPVStringRanges(t *testing
 		{start: 0x0100, count: 3},
 		{start: 0x0107, count: 3},
 		{start: 0x010F, count: 3},
+		{start: 0x0213, count: 3},
 		{start: 0x0219, count: 1},
 		{start: 0x021B, count: 1},
+		{start: 0x022A, count: 2},
 		{start: 0x0230, count: 4},
-		{start: 0x023A, count: 3},
+		{start: 0x0238, count: 5},
 		{start: 0xE20A, count: 1},
 	}
 

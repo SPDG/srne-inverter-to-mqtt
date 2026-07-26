@@ -36,7 +36,7 @@ sudo install -m 0644 configs/config.example.yaml /etc/srne-inverter-to-mqtt/conf
 
 3. Edit the config:
 
-- set `device.inverter_type` to `single_phase` or `three_phase`,
+- set `device.inverter_type` to `single_phase`, `spi_h3p`, or `hesp_sh3`,
 - set the local serial port or a `tcp://host:port` endpoint,
 - set `serial.network_protocol` to `rtu`, `rtu_over_tcp`, or `modbus_tcp`,
 - set MQTT broker credentials,

@@ -10,7 +10,7 @@ Linux-first single-binary bridge for polling SRNE inverters over Modbus RTU or T
 - single Go binary with embedded web UI,
 - YAML-backed configuration with no external database,
 - Modbus RTU, transparent RTU-over-TCP, and Modbus TCP gateway transports,
-- single-phase and three-phase inverter profiles,
+- model-aware single-phase, SPI H3P, and HESP SH3 inverter profiles,
 - Home Assistant MQTT Discovery for telemetry and writable controls,
 - built-in control panel with live telemetry, safe writes, and serial port discovery,
 - GitHub Actions workflows for CI and tagged releases on Linux.
@@ -61,6 +61,14 @@ On Linux, prefer stable serial symlinks from `/dev/serial/by-path/` or `/dev/ser
 
 Serial-over-Ethernet converters are supported by setting `serial.port` to a TCP endpoint such as `tcp://192.168.6.50:502`. Use `serial.network_protocol: rtu_over_tcp` for transparent serial servers, or `serial.network_protocol: modbus_tcp` when the converter is configured as a Modbus TCP gateway.
 
+Select the hardware profile explicitly:
+
+- `single_phase` for the original single-phase register map,
+- `spi_h3p` for SPI-8K/10K/12K-H3P off-grid three-phase inverters,
+- `hesp_sh3` for HESP SH3 hybrid/on-grid three-phase inverters.
+
+The legacy `three_phase` value is accepted as an alias for `spi_h3p`.
+
 The probe command uses the same transports, for example:
 
 ```bash
@@ -68,6 +76,10 @@ go run ./cmd/modbus-probe --port tcp://192.168.6.50:502 --network-protocol rtu_o
 ```
 
 Deployment details and a ready-to-use `systemd` unit are documented in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+
+Hardware-specific operating notes and the source manuals are available in
+[`docs/SPI_H3P_OPERATION.md`](docs/SPI_H3P_OPERATION.md) and
+[`docs/reference/`](docs/reference/).
 
 ## HTTP API
 

@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -30,6 +31,7 @@ type App struct {
 	cfg          config.Config
 	runtimeState *state.Store
 	modbus       *modbussvc.Service
+	exit         func(int)
 }
 
 func New(configPath string, build buildinfo.Info) (*App, error) {
@@ -44,6 +46,7 @@ func New(configPath string, build buildinfo.Info) (*App, error) {
 		startedAt:    time.Now(),
 		assets:       assets,
 		runtimeState: state.New(),
+		exit:         os.Exit,
 	}, nil
 }
 
@@ -97,6 +100,10 @@ func (a *App) Run(ctx context.Context) error {
 	})
 
 	group.Go(func() error {
+		return a.watchdogLoop(groupCtx)
+	})
+
+	group.Go(func() error {
 		log.Printf("web server listening on http://%s", cfg.HTTP.Listen)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			return err
@@ -112,6 +119,78 @@ func (a *App) Run(ctx context.Context) error {
 	})
 
 	return group.Wait()
+}
+
+func (a *App) watchdogLoop(ctx context.Context) error {
+	for {
+		interval := a.watchdogInterval()
+
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(interval):
+		}
+
+		trigger, stalledFor, modbusState := a.shouldTriggerWatchdog(time.Now().UTC())
+		if !trigger {
+			continue
+		}
+
+		log.Printf(
+			"watchdog exiting process due to modbus stall status=%s stalled_for=%s last_error=%q",
+			modbusState.Status,
+			stalledFor.Round(time.Second),
+			modbusState.LastError,
+		)
+		a.exit(1)
+		return fmt.Errorf("watchdog requested process restart")
+	}
+}
+
+func (a *App) watchdogInterval() time.Duration {
+	cfg := a.GetConfig()
+	interval := cfg.Polling.FastInterval.Duration
+	if interval <= 0 {
+		return 15 * time.Second
+	}
+	if interval > 15*time.Second {
+		return 15 * time.Second
+	}
+	return interval
+}
+
+func (a *App) shouldTriggerWatchdog(now time.Time) (bool, time.Duration, state.ServiceStatus) {
+	cfg := a.GetConfig()
+	snapshot := a.runtimeState.Snapshot()
+	modbusState, ok := snapshot.Services["modbus"]
+	if !ok {
+		return false, 0, state.ServiceStatus{}
+	}
+
+	if modbusState.Connected || modbusState.Status == "connected" ||
+		modbusState.Status == "starting" || modbusState.Status == "disabled" {
+		return false, 0, modbusState
+	}
+
+	if modbusState.LastSuccess.IsZero() {
+		return false, 0, modbusState
+	}
+
+	threshold := modbusWatchdogThreshold(cfg)
+	stalledFor := now.Sub(modbusState.LastSuccess)
+	if stalledFor < threshold {
+		return false, stalledFor, modbusState
+	}
+
+	return true, stalledFor, modbusState
+}
+
+func modbusWatchdogThreshold(cfg config.Config) time.Duration {
+	threshold := cfg.Polling.SlowInterval.Duration * 2
+	if threshold < 90*time.Second {
+		return 90 * time.Second
+	}
+	return threshold
 }
 
 func (a *App) GetConfig() config.Config {

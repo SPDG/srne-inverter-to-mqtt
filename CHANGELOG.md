@@ -6,6 +6,23 @@ The format is based on Keep a Changelog and the project uses Git tags for releas
 
 ## [Unreleased]
 
+### Added
+
+- Dedicated `spi_h3p` and `hesp_sh3` hardware profiles.
+- Per-phase grid voltage and current telemetry for three-phase inverters.
+- SPI H3P, HESP SH3, and Modbus reference documents with validated operating notes.
+- Modbus stall watchdog coverage on the current polling implementation.
+
+### Changed
+
+- Legacy `three_phase` configurations now resolve to the safer SPI H3P off-grid profile.
+- HESP grid-connected active power is represented as a signed percentage according to the protocol reference.
+
+### Fixed
+
+- SPI H3P no longer exposes HESP-only grid export controls.
+- Obsolete HESP grid controls are removed from Home Assistant Discovery when the SPI profile is active.
+
 ## [0.2.0] - 2026-07-19
 
 ### Added

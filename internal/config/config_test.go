@@ -53,9 +53,12 @@ func TestDeviceInverterTypeNormalization(t *testing.T) {
 		{input: "", want: "single_phase"},
 		{input: "single", want: "single_phase"},
 		{input: "1p", want: "single_phase"},
-		{input: "three", want: "three_phase"},
-		{input: "3p", want: "three_phase"},
-		{input: "three-phase", want: "three_phase"},
+		{input: "three", want: "spi_h3p"},
+		{input: "3p", want: "spi_h3p"},
+		{input: "three-phase", want: "spi_h3p"},
+		{input: "spi-h3p", want: "spi_h3p"},
+		{input: "hesp", want: "hesp_sh3"},
+		{input: "hesp-sh3", want: "hesp_sh3"},
 	}
 
 	for _, tc := range cases {

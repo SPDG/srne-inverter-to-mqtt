@@ -20,6 +20,8 @@ const (
 const (
 	InverterTypeSinglePhase = "single_phase"
 	InverterTypeThreePhase  = "three_phase"
+	InverterTypeSPIH3P      = "spi_h3p"
+	InverterTypeHESPSH3     = "hesp_sh3"
 )
 
 type ValueType string
@@ -106,27 +108,38 @@ func Catalog() []Register {
 
 func CatalogForInverterType(inverterType string) []Register {
 	catalog := baseCatalog()
-	if normalizeInverterType(inverterType) != InverterTypeThreePhase {
+	normalized := normalizeInverterType(inverterType)
+	if !isThreePhaseInverterType(normalized) {
 		return catalog
 	}
 
-	return threePhaseCatalog(catalog)
+	return threePhaseCatalog(catalog, normalized == InverterTypeHESPSH3)
 }
 
 func normalizeInverterType(inverterType string) string {
 	switch strings.ToLower(strings.TrimSpace(inverterType)) {
 	case "three_phase", "three-phase", "three", "3p":
-		return InverterTypeThreePhase
+		return InverterTypeSPIH3P
+	case "spi_h3p", "spi-h3p", "spi":
+		return InverterTypeSPIH3P
+	case "hesp_sh3", "hesp-sh3", "hesp":
+		return InverterTypeHESPSH3
 	default:
 		return InverterTypeSinglePhase
 	}
 }
 
-func threePhaseCatalog(catalog []Register) []Register {
+func isThreePhaseInverterType(inverterType string) bool {
+	normalized := normalizeInverterType(inverterType)
+	return normalized == InverterTypeSPIH3P || normalized == InverterTypeHESPSH3
+}
+
+func threePhaseCatalog(catalog []Register, includeGridControls bool) []Register {
 	filtered := make([]Register, 0, len(catalog)+12)
 	for _, reg := range catalog {
 		switch reg.ID {
-		case "pv_voltage", "pv_current", "pv_power", "load_power", "load_current", "load_apparent_power", "grid_power":
+		case "pv_voltage", "pv_current", "pv_power", "load_power", "load_current", "load_apparent_power",
+			"grid_voltage", "grid_current", "grid_power":
 			continue
 		case "pv_charge_current_setup", "maximum_charge_current":
 			reg.WriteMax = 260
@@ -147,20 +160,30 @@ func threePhaseCatalog(catalog []Register) []Register {
 		pvPowerRegister("pv2_power", "PV2 Power", 0x0111),
 		powerSumRegister("load_power", "Load Power", 0xFFF8, "mdi:home-lightning-bolt-outline"),
 		powerSumRegister("grid_power", "Grid Power", 0xFFF9, "mdi:transmission-tower"),
+		phaseVoltageRegister("grid_voltage_phase_a", "Grid Voltage Phase A", 0x0213, "mdi:transmission-tower"),
+		phaseCurrentRegister("grid_current_phase_a", "Grid Current Phase A", 0x0214),
 		phaseCurrentRegister("load_current_phase_a", "Load Current Phase A", 0x0219),
 		phasePowerRegister("load_power_phase_a", "Load Power Phase A", 0x021B, 1, "mdi:home-lightning-bolt-outline"),
 		phaseApparentPowerRegister("load_apparent_power_phase_a", "Load Apparent Power Phase A", 0x021C),
+		phaseVoltageRegister("grid_voltage_phase_b", "Grid Voltage Phase B", 0x022A, "mdi:transmission-tower"),
+		phaseVoltageRegister("grid_voltage_phase_c", "Grid Voltage Phase C", 0x022B, "mdi:transmission-tower"),
 		phaseCurrentRegister("load_current_phase_b", "Load Current Phase B", 0x0230),
 		phaseCurrentRegister("load_current_phase_c", "Load Current Phase C", 0x0231),
 		phasePowerRegister("load_power_phase_b", "Load Power Phase B", 0x0232, 1, "mdi:home-lightning-bolt-outline"),
 		phasePowerRegister("load_power_phase_c", "Load Power Phase C", 0x0233, 1, "mdi:home-lightning-bolt-outline"),
+		phaseCurrentRegister("grid_current_phase_b", "Grid Current Phase B", 0x0238),
+		phaseCurrentRegister("grid_current_phase_c", "Grid Current Phase C", 0x0239),
 		phasePowerRegister("grid_power_phase_a", "Grid Power Phase A", 0x023A, -1, "mdi:transmission-tower"),
 		phasePowerRegister("grid_power_phase_b", "Grid Power Phase B", 0x023B, -1, "mdi:transmission-tower"),
 		phasePowerRegister("grid_power_phase_c", "Grid Power Phase C", 0x023C, -1, "mdi:transmission-tower"),
-		gridOperatingModeRegister(),
-		onGridMaxPowerRegister(),
-		zeroExportPowerRegister(),
 	)
+	if includeGridControls {
+		filtered = append(filtered,
+			gridOperatingModeRegister(),
+			onGridMaxPowerRegister(),
+			zeroExportPowerRegister(),
+		)
+	}
 
 	return filtered
 }
@@ -179,36 +202,34 @@ func gridOperatingModeRegister() Register {
 		Entity:    "config",
 		Writable:  true,
 		WriteMin:  0,
-		WriteMax:  3,
+		WriteMax:  2,
 		WriteStep: 1,
 		Enum: map[int64]string{
-			0: "Disabled (DIS)",
-			1: "On-grid Export (ON GRD)",
-			2: "Zero Export (AC Output)",
-			3: "Zero Export (AC Input)",
+			0: "Disabled",
+			1: "Grid-connected Export",
+			2: "Anti-backflow",
 		},
 	}
 }
 
 func onGridMaxPowerRegister() Register {
 	return Register{
-		ID:          "on_grid_max_power",
-		Name:        "On-grid Maximum Export Power",
-		Address:     0xE400,
-		Count:       1,
-		Type:        TypeUint16,
-		Scale:       1,
-		Precision:   0,
-		Unit:        "W",
-		DeviceClass: "power",
-		Icon:        "mdi:transmission-tower-export",
-		Component:   "sensor",
-		Group:       GroupSlow,
-		Entity:      "config",
-		Writable:    true,
-		WriteMin:    0,
-		WriteMax:    12000,
-		WriteStep:   100,
+		ID:        "on_grid_max_power",
+		Name:      "Grid-connected Active Power",
+		Address:   0xE400,
+		Count:     1,
+		Type:      TypeInt16,
+		Scale:     1,
+		Precision: 0,
+		Unit:      "%",
+		Icon:      "mdi:transmission-tower-export",
+		Component: "sensor",
+		Group:     GroupSlow,
+		Entity:    "config",
+		Writable:  true,
+		WriteMin:  -100,
+		WriteMax:  100,
+		WriteStep: 1,
 	}
 }
 
@@ -235,6 +256,10 @@ func zeroExportPowerRegister() Register {
 }
 
 func pvVoltageRegister(id, name string, address uint16) Register {
+	return phaseVoltageRegister(id, name, address, "mdi:solar-power")
+}
+
+func phaseVoltageRegister(id, name string, address uint16, icon string) Register {
 	return Register{
 		ID:          id,
 		Name:        name,
@@ -246,7 +271,7 @@ func pvVoltageRegister(id, name string, address uint16) Register {
 		Unit:        "V",
 		DeviceClass: "voltage",
 		StateClass:  "measurement",
-		Icon:        "mdi:solar-power",
+		Icon:        icon,
 		Component:   "sensor",
 		Group:       GroupFast,
 		Entity:      "diagnostic",
@@ -1657,13 +1682,20 @@ func BuildCriticalFastReadPlanForInverterType(inverterType string) []ReadRange {
 		// directly caps usable PV charging power.
 		"maximum_charge_current": {},
 	}
-	if normalizeInverterType(inverterType) == InverterTypeThreePhase {
+	if isThreePhaseInverterType(inverterType) {
 		critical["pv1_voltage"] = struct{}{}
 		critical["pv1_current"] = struct{}{}
 		critical["pv1_power"] = struct{}{}
 		critical["pv2_voltage"] = struct{}{}
 		critical["pv2_current"] = struct{}{}
 		critical["pv2_power"] = struct{}{}
+		critical["grid_voltage_phase_a"] = struct{}{}
+		critical["grid_voltage_phase_b"] = struct{}{}
+		critical["grid_voltage_phase_c"] = struct{}{}
+		critical["grid_current_phase_a"] = struct{}{}
+		critical["grid_current_phase_b"] = struct{}{}
+		critical["grid_current_phase_c"] = struct{}{}
+		critical["grid_frequency"] = struct{}{}
 		critical["load_current_phase_a"] = struct{}{}
 		critical["load_current_phase_b"] = struct{}{}
 		critical["load_current_phase_c"] = struct{}{}

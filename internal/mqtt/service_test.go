@@ -113,6 +113,54 @@ func TestWritableDiscoveryPayloadUsesSelectForRegularEnum(t *testing.T) {
 	}
 }
 
+func TestSPIProfileRemovesHESPGridDiscovery(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.Config{
+		Device: config.DeviceConfig{
+			Name:         "srne-002",
+			InverterType: "spi_h3p",
+		},
+		MQTT: config.MQTTConfig{
+			DiscoveryPrefix: "homeassistant",
+		},
+	}
+
+	got := staleDiscoveryTopics(cfg, "srne-002")
+	want := map[string]bool{
+		"homeassistant/sensor/srne-002/grid_operating_mode/config":         true,
+		"homeassistant/select/srne-002/grid_operating_mode_control/config": true,
+		"homeassistant/sensor/srne-002/on_grid_max_power/config":           true,
+		"homeassistant/number/srne-002/on_grid_max_power_control/config":   true,
+		"homeassistant/sensor/srne-002/zero_export_power/config":           true,
+		"homeassistant/number/srne-002/zero_export_power_control/config":   true,
+	}
+
+	if len(got) != len(want) {
+		t.Fatalf("stale topic count = %d, want %d: %#v", len(got), len(want), got)
+	}
+	for _, topic := range got {
+		if !want[topic] {
+			t.Fatalf("unexpected stale topic %q", topic)
+		}
+	}
+}
+
+func TestHESPProfileKeepsGridDiscovery(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.Config{
+		Device: config.DeviceConfig{
+			Name:         "srne-hesp",
+			InverterType: "hesp_sh3",
+		},
+	}
+
+	if got := staleDiscoveryTopics(cfg, "srne-hesp"); len(got) != 0 {
+		t.Fatalf("HESP stale topics = %#v, want none", got)
+	}
+}
+
 func TestPublishCommandStatePublishesOptimisticState(t *testing.T) {
 	t.Parallel()
 

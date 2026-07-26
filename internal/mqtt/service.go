@@ -205,6 +205,12 @@ func (s *Service) publishAvailability(cfg config.Config, payload string) error {
 
 func (s *Service) publishDiscovery(cfg config.Config) error {
 	deviceID := sanitizeID(cfg.Device.Name)
+	for _, topic := range staleDiscoveryTopics(cfg, deviceID) {
+		if err := s.publish(cfg, topic, "", true); err != nil {
+			return err
+		}
+	}
+
 	for _, reg := range catalogForConfig(cfg) {
 		sensorConfigTopic := discoveryTopic(cfg, "sensor", deviceID, reg.ID)
 		if reg.WriteOnly {
@@ -276,6 +282,31 @@ func (s *Service) publishDiscovery(cfg config.Config) error {
 	}
 
 	return nil
+}
+
+func staleDiscoveryTopics(cfg config.Config, deviceID string) []string {
+	inverterType, err := cfg.Device.NormalizedInverterType()
+	if err != nil || inverterType != registers.InverterTypeSPIH3P {
+		return nil
+	}
+
+	controls := []struct {
+		id        string
+		component string
+	}{
+		{id: "grid_operating_mode", component: "select"},
+		{id: "on_grid_max_power", component: "number"},
+		{id: "zero_export_power", component: "number"},
+	}
+
+	topics := make([]string, 0, len(controls)*2)
+	for _, control := range controls {
+		topics = append(topics,
+			discoveryTopic(cfg, "sensor", deviceID, control.id),
+			discoveryTopic(cfg, control.component, deviceID, control.id+"_control"),
+		)
+	}
+	return topics
 }
 
 func (s *Service) publishTelemetry(cfg config.Config) error {

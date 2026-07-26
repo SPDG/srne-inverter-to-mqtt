@@ -1,7 +1,7 @@
 device:
   name: srne-main
   slave_id: 1
-  inverter_type: single_phase
+  inverter_type: single_phase # single_phase, spi_h3p, or hesp_sh3
 
 serial:
   port: /dev/ttyUSB0

@@ -265,9 +265,13 @@ func (c DeviceConfig) NormalizedInverterType() (string, error) {
 	case "", "single_phase", "single-phase", "single", "1p":
 		return "single_phase", nil
 	case "three_phase", "three-phase", "three", "3p":
-		return "three_phase", nil
+		return "spi_h3p", nil
+	case "spi_h3p", "spi-h3p", "spi":
+		return "spi_h3p", nil
+	case "hesp_sh3", "hesp-sh3", "hesp":
+		return "hesp_sh3", nil
 	default:
-		return "", errors.New("device.inverter_type must be single_phase or three_phase")
+		return "", errors.New("device.inverter_type must be single_phase, spi_h3p, or hesp_sh3")
 	}
 }
 
