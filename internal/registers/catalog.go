@@ -949,7 +949,7 @@ func baseCatalog() []Register {
 			Group:       GroupSlow,
 			Entity:      "config",
 			Writable:    true,
-			WriteMin:    0,
+			WriteMin:    1,
 			WriteMax:    100,
 			WriteStep:   1,
 		},

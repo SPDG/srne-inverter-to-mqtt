@@ -529,7 +529,6 @@ func TestCatalogIncludesWritableBatteryDischargeThresholds(t *testing.T) {
 		"battery_charge_cutoff_soc",
 		"battery_low_soc_alarm",
 		"battery_discharge_stop",
-		"battery_discharge_start",
 	} {
 		reg, ok := FindByID(id)
 		if !ok {
@@ -541,6 +540,22 @@ func TestCatalogIncludesWritableBatteryDischargeThresholds(t *testing.T) {
 		if reg.WriteMin != 0 || reg.WriteMax != 100 || reg.WriteStep != 1 {
 			t.Fatalf("%s write bounds = [%v,%v] step %v, want [0,100] step 1", id, reg.WriteMin, reg.WriteMax, reg.WriteStep)
 		}
+	}
+
+	startReg, ok := FindByID("battery_discharge_start")
+	if !ok {
+		t.Fatal("battery_discharge_start not found")
+	}
+	if !startReg.Writable {
+		t.Fatal("battery_discharge_start should be writable")
+	}
+	if startReg.WriteMin != 1 || startReg.WriteMax != 100 || startReg.WriteStep != 1 {
+		t.Fatalf(
+			"battery_discharge_start write bounds = [%v,%v] step %v, want [1,100] step 1",
+			startReg.WriteMin,
+			startReg.WriteMax,
+			startReg.WriteStep,
+		)
 	}
 }
 

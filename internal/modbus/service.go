@@ -147,6 +147,8 @@ func (s *Service) WriteRegister(id string, value any) error {
 	return nil
 }
 
+const batterySOCThresholdGap uint16 = 5
+
 func (s *Service) validateWriteLocked(cfg config.Config, reg registers.Register, encoded uint16) error {
 	switch reg.ID {
 	case "battery_discharge_cutoff_soc":
@@ -154,23 +156,35 @@ func (s *Service) validateWriteLocked(cfg config.Config, reg registers.Register,
 		if err != nil {
 			return err
 		}
-		if encoded >= alarmValue {
-			return fmt.Errorf("battery_discharge_cutoff_soc must be lower than battery_low_soc_alarm (%d%%)", alarmValue)
+		if encoded+batterySOCThresholdGap > alarmValue {
+			return fmt.Errorf(
+				"battery_discharge_cutoff_soc must be at least %d percentage points below battery_low_soc_alarm (%d%%)",
+				batterySOCThresholdGap,
+				alarmValue,
+			)
 		}
 	case "battery_low_soc_alarm":
 		cutoffValue, err := s.currentRegisterRawLocked(cfg, "battery_discharge_cutoff_soc")
 		if err != nil {
 			return err
 		}
-		if encoded <= cutoffValue {
-			return fmt.Errorf("battery_low_soc_alarm must be greater than battery_discharge_cutoff_soc (%d%%)", cutoffValue)
+		if encoded < cutoffValue+batterySOCThresholdGap {
+			return fmt.Errorf(
+				"battery_low_soc_alarm must be at least %d percentage points above battery_discharge_cutoff_soc (%d%%)",
+				batterySOCThresholdGap,
+				cutoffValue,
+			)
 		}
 		startValue, err := s.currentRegisterRawLocked(cfg, "battery_discharge_start")
 		if err != nil {
 			return err
 		}
-		if encoded >= startValue {
-			return fmt.Errorf("battery_low_soc_alarm must be lower than battery_discharge_start (%d%%)", startValue)
+		if encoded+batterySOCThresholdGap > startValue {
+			return fmt.Errorf(
+				"battery_low_soc_alarm must be at least %d percentage points below battery_discharge_start (%d%%)",
+				batterySOCThresholdGap,
+				startValue,
+			)
 		}
 	case "battery_discharge_stop":
 		startValue, err := s.currentRegisterRawLocked(cfg, "battery_discharge_start")
@@ -192,8 +206,12 @@ func (s *Service) validateWriteLocked(cfg config.Config, reg registers.Register,
 		if err != nil {
 			return err
 		}
-		if encoded <= alarmValue {
-			return fmt.Errorf("battery_discharge_start must be greater than battery_low_soc_alarm (%d%%)", alarmValue)
+		if encoded < alarmValue+batterySOCThresholdGap {
+			return fmt.Errorf(
+				"battery_discharge_start must be at least %d percentage points above battery_low_soc_alarm (%d%%)",
+				batterySOCThresholdGap,
+				alarmValue,
+			)
 		}
 	}
 

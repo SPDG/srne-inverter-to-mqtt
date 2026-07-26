@@ -103,6 +103,32 @@ transition. A safer starting point is:
 These values are operational starting points, not universal battery limits.
 The BMS charge and discharge limits remain authoritative.
 
+### Validated SOC Threshold Constraints
+
+The generic SRNE Modbus V1.92 register table documents these absolute ranges:
+
+| Register | Setting | Documented range |
+| --- | --- | ---: |
+| `0xE00F` | Battery discharge cut-off SOC | 0-100% |
+| `0xE01E` | Battery low SOC alarm | 0-100% |
+| `0xE01F` | Switch to utility SOC | 0-100% |
+| `0xE020` | Switch to inverter SOC | 1-100% |
+
+The table does not document cross-register constraints. Live tests on the SPI
+H3P established that its firmware additionally requires a five-percentage-point
+gap in this sequence:
+
+```text
+Battery discharge cut-off SOC
+    + 5 percentage points <= Battery low SOC alarm
+    + 5 percentage points <= Switch to inverter SOC
+```
+
+With cut-off SOC at 10%, lowering the alarm from 15% to 14% returned Modbus
+exception 3 (`illegal data value`). With the alarm at 16%, an inverter-switch
+threshold of 21% was accepted and 20% was rejected. The settings were restored
+to 10% cut-off, 15% alarm, and 20% inverter-switch SOC after the test.
+
 ## Model Identification
 
 The general SRNE protocol defines:

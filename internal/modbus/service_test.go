@@ -44,14 +44,14 @@ func TestValidateBatteryDischargeThresholdsFromSnapshot(t *testing.T) {
 	stopReg, _ := registers.FindByID("battery_discharge_stop")
 	startReg, _ := registers.FindByID("battery_discharge_start")
 
-	if err := service.validateWriteLocked(config.Config{}, cutoffReg, 20); err == nil {
+	if err := service.validateWriteLocked(config.Config{}, cutoffReg, 16); err == nil {
 		t.Fatal("expected discharge cut-off versus low SOC alarm validation error")
 	}
-	if err := service.validateWriteLocked(config.Config{}, alarmReg, 15); err == nil {
+	if err := service.validateWriteLocked(config.Config{}, alarmReg, 19); err == nil {
 		t.Fatal("expected low SOC alarm versus discharge cut-off validation error")
 	}
-	if err := service.validateWriteLocked(config.Config{}, alarmReg, 25); err == nil {
-		t.Fatal("expected low SOC alarm validation error")
+	if err := service.validateWriteLocked(config.Config{}, alarmReg, 21); err == nil {
+		t.Fatal("expected low SOC alarm versus inverter threshold validation error")
 	}
 	if err := service.validateWriteLocked(config.Config{}, stopReg, 26); err == nil {
 		t.Fatal("expected stop threshold validation error")
@@ -68,7 +68,7 @@ func TestValidateBatteryDischargeThresholdsFromSnapshot(t *testing.T) {
 	if err := service.validateWriteLocked(config.Config{}, stopReg, 10); err != nil {
 		t.Fatalf("unexpected stop validation error: %v", err)
 	}
-	if err := service.validateWriteLocked(config.Config{}, startReg, 20); err == nil {
+	if err := service.validateWriteLocked(config.Config{}, startReg, 24); err == nil {
 		t.Fatal("expected start threshold versus low SOC alarm validation error")
 	}
 	if err := service.validateWriteLocked(config.Config{}, startReg, 25); err != nil {

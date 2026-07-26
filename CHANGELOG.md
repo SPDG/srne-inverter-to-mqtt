@@ -23,6 +23,7 @@ The format is based on Keep a Changelog and the project uses Git tags for releas
 - SPI H3P no longer exposes HESP-only grid export controls.
 - Obsolete HESP grid controls are removed from Home Assistant Discovery when the SPI profile is active.
 - SPI operating notes distinguish normal `PV Only` charging from low-SOC recovery charging.
+- SOC threshold writes enforce the firmware's validated five-percentage-point safety gaps before sending Modbus commands.
 
 ## [0.2.0] - 2026-07-19
 
