@@ -55,14 +55,21 @@ sequence is:
 For this behavior, use:
 
 - AC output source priority: `SBU` (PV, battery, then utility)
-- Battery charging mode: `SNU` / Hybrid when utility should supplement weak PV
 - Switch to utility SOC: high enough to switch before the BMS low-capacity stop
 - Switch to inverter SOC: above the utility-switch threshold to provide
   hysteresis
 - Grid charge current: a value supported by both the inverter and BMS
 
-`PV Only` / `OSO` explicitly prevents utility battery charging. It does not
-enable or disable utility bypass.
+`PV Only` / `OSO` prevents utility charging during normal operation. It does
+not enable or disable utility bypass. SRNE firmware may override the normal
+charging priority during BMS low-capacity recovery or lithium-battery
+activation, using AC IN to reach the configured restart SOC. This behavior was
+observed on the previous single-phase SRNE inverter and must be validated on
+the SPI H3P after AC IN is restored.
+
+Keep `PV Only` when grid charging is wanted only as a protective low-SOC
+recovery mechanism. Use `Hybrid` only when utility should also supplement weak
+PV during otherwise normal operation.
 
 ## Validated Low-SOC Incident
 
@@ -91,7 +98,7 @@ transition. A safer starting point is:
 | Switch to inverter SOC | 30% |
 | Battery low SOC alarm | 15-18% |
 | Battery discharge cut-off SOC | 10% |
-| Charger source priority | Hybrid |
+| Charger source priority | PV Only; use Hybrid only for normal grid-assisted charging |
 
 These values are operational starting points, not universal battery limits.
 The BMS charge and discharge limits remain authoritative.
