@@ -6,6 +6,7 @@ let latestConfig = null;
 let refreshTimer = null;
 let haYamlMode = localStorage.getItem("srneHaYamlMode") || "dashboard";
 let rawDataItems = [];
+let rawDataPaused = false;
 const controlDrafts = new Map();
 
 const els = {
@@ -23,6 +24,7 @@ const els = {
   telemetrySubtitle: document.getElementById("telemetry-subtitle"),
   rawDataSearch: document.getElementById("raw-data-search"),
   rawDataClear: document.getElementById("raw-data-clear"),
+  rawDataPause: document.getElementById("raw-data-pause"),
   rawDataCount: document.getElementById("raw-data-count"),
   rawDataBody: document.getElementById("raw-data-body"),
   controlsGrid: document.getElementById("controls-grid"),
@@ -152,7 +154,9 @@ function renderStatus(status, { forceControls = false } = {}) {
   renderEnergy(byId);
   renderStormCharge(status.stormCharge || {}, byId);
   renderTelemetry(telemetry);
-  renderRawData(telemetry);
+  if (!rawDataPaused) {
+    renderRawData(telemetry);
+  }
   reconcileControlDrafts(telemetry);
   if (forceControls || (!isControlInteractionActive() && controlDrafts.size === 0)) {
     renderControls(telemetry);
@@ -161,20 +165,24 @@ function renderStatus(status, { forceControls = false } = {}) {
   renderHAConfig(status);
 }
 
-function renderRawData(items = rawDataItems) {
-  rawDataItems = [...items].sort((left, right) => {
-    const addressDifference = Number(left.address) - Number(right.address);
-    return addressDifference || String(left.id).localeCompare(String(right.id));
-  });
+function renderRawData(items) {
+  if (Array.isArray(items)) {
+    rawDataItems = [...items].sort((left, right) => {
+      const addressDifference = Number(left.address) - Number(right.address);
+      return addressDifference || String(left.id).localeCompare(String(right.id));
+    });
+  }
 
   const query = String(els.rawDataSearch?.value || "").trim().toLowerCase();
   const filtered = query
     ? rawDataItems.filter((item) => rawSearchText(item).includes(query))
     : rawDataItems;
 
-  els.rawDataCount.textContent = query
+  const countText = query
     ? `${filtered.length} of ${rawDataItems.length} parameters`
     : `${rawDataItems.length} parameters`;
+  els.rawDataCount.textContent = rawDataPaused ? `${countText} · paused` : countText;
+  els.rawDataCount.classList.toggle("paused", rawDataPaused);
 
   if (!filtered.length) {
     const message = rawDataItems.length ? "No parameters match this search." : "Waiting for Modbus data.";
@@ -1130,6 +1138,12 @@ async function bootstrap() {
     els.rawDataSearch.value = "";
     els.rawDataSearch.focus();
     renderRawData();
+  });
+  els.rawDataPause?.addEventListener("click", () => {
+    rawDataPaused = !rawDataPaused;
+    els.rawDataPause.textContent = rawDataPaused ? "Resume updates" : "Pause updates";
+    els.rawDataPause.classList.toggle("paused", rawDataPaused);
+    renderRawData(rawDataPaused ? undefined : latestStatus?.telemetry || []);
   });
   els.inverterClockForm?.addEventListener("submit", setInverterClock);
   els.refreshInverterClock?.addEventListener("click", loadInverterClock);

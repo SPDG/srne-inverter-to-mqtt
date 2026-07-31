@@ -940,6 +940,13 @@ select {
   box-shadow: 0 0 0 3px rgba(52, 170, 244, 0.12);
 }
 
+.raw-data-toolbar .action-button.paused,
+.status-pill.paused {
+  border-color: #d99a32;
+  background: rgba(217, 154, 50, 0.12);
+  color: #f2bd62;
+}
+
 .raw-table-wrap {
   width: 100%;
   max-height: calc(100vh - 250px);
