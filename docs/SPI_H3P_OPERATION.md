@@ -30,11 +30,11 @@ The following live values were read from `srne-002` on 2026-07-26:
 | Today energy export | `0xF02C` | `0` | No recorded export |
 | Total energy export | `0xF032` | `0` | No recorded export |
 
-The same live check returned `0.0 V` for grid phases A, B, and C and `0.00 Hz`
-for the grid frequency. This means the inverter did not detect utility voltage
-at AC IN. Grid-connected export mode must not be enabled to work around this.
-Check the upstream supply, the OEM contactor, the internal AC IN breaker, and
-the three-phase wiring before changing software settings.
+The 2026-07-26 live check returned `0.0 V` for grid phases A, B, and C and
+`0.00 Hz` for the grid frequency because utility power was not reaching AC IN.
+After the upstream connection was restored, the same validated Modbus registers
+reported approximately 233-235 V per phase and 50 Hz. Grid-connected export
+mode was not required and must not be enabled to work around a missing AC input.
 
 The application exposes these controls only for the `hesp_sh3` profile. They
 are intentionally hidden for `spi_h3p`, even when the shared firmware responds
@@ -70,6 +70,48 @@ the SPI H3P after AC IN is restored.
 Keep `PV Only` when grid charging is wanted only as a protective low-SOC
 recovery mechanism. Use `Hybrid` only when utility should also supplement weak
 PV during otherwise normal operation.
+
+## Managed Storm Charge
+
+The application provides a managed `Storm Charge` operation for charging from
+utility before an expected outage. It is intentionally an application-level
+workflow rather than a single Modbus register.
+
+On start, the service persists and then temporarily changes:
+
+1. battery charge cut-off SOC to the selected target,
+2. mains charge current limit to the selected maximum,
+3. output source priority to `Utility` (`UTI`),
+4. charger source priority to `Hybrid` (`SNU`).
+
+The service waits briefly after entering utility bypass before changing charger
+priority. The tested SPI-12K-H3P firmware rejects `Utility Priority` with an
+illegal-data-value Modbus exception, while `Hybrid` is accepted and enables
+grid-assisted charging when the load is in utility bypass.
+
+Moving AC OUT to utility bypass is required for deterministic mains charging on
+SPI H3P. The manual notes that simultaneous PV and utility charging is available
+while utility bypass is loaded; while inverter output is active, only PV
+charging may start.
+
+The previous values are restored after the target SOC is reached, on manual
+cancellation, after the configured timeout, after grid loss, or when a fault is
+reported. An active session survives process restarts through the automatic
+`<config>.storm-charge-state.yaml` recovery file. Manual writes to the four
+managed registers and service configuration changes are rejected while the
+session is active.
+
+The selected current is a battery-side limit. The UI estimates power as current
+multiplied by the live battery voltage; actual power remains subject to PV/load
+conditions, inverter derating, and the BMS charge-current limit. SPI-12K-H3P
+utility charging is capped at 120 A.
+
+The workflow was validated live on `srne-002` on 2026-07-31 with a 10 A limit.
+After switching to `Utility` plus `Hybrid`, all four writes passed readback,
+three-phase grid current became non-zero, and battery current changed from
+discharging to approximately 4.8 A charging. Manual cancellation restored the
+captured values: 100% charge cut-off, 10 A mains limit, `PV Only`, and
+`Solar, Battery, Utility` output priority.
 
 ## Validated Low-SOC Incident
 

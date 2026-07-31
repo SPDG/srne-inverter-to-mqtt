@@ -12,6 +12,7 @@ The format is based on Keep a Changelog and the project uses Git tags for releas
 - Per-phase grid voltage and current telemetry for three-phase inverters.
 - SPI H3P, HESP SH3, and Modbus reference documents with validated operating notes.
 - Modbus stall watchdog coverage on the current polling implementation.
+- Managed SPI H3P storm charging with target SOC, current and timeout controls, persistent rollback, web controls, and Home Assistant MQTT Discovery entities.
 
 ### Changed
 

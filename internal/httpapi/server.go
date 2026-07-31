@@ -14,6 +14,7 @@ import (
 	"github.com/tomasz/srne-inverter-to-mqtt/internal/registers"
 	"github.com/tomasz/srne-inverter-to-mqtt/internal/serialdetect"
 	"github.com/tomasz/srne-inverter-to-mqtt/internal/state"
+	"github.com/tomasz/srne-inverter-to-mqtt/internal/stormcharge"
 )
 
 type ConfigStore interface {
@@ -29,6 +30,13 @@ type RegisterWriter interface {
 	WriteRegister(id string, value any) error
 }
 
+type StormChargeController interface {
+	GetStormChargeStatus() stormcharge.Status
+	UpdateStormChargeSettings(stormcharge.Settings) error
+	StartStormCharge(stormcharge.Settings) error
+	CancelStormCharge() error
+}
+
 type StatusSnapshot struct {
 	StartedAt   time.Time `json:"startedAt"`
 	ConfigPath  string    `json:"configPath"`
@@ -41,16 +49,18 @@ type Handler struct {
 	store  ConfigStore
 	status StatusProvider
 	writer RegisterWriter
+	storm  StormChargeController
 	assets fs.FS
 }
 
-func NewHandler(build buildinfo.Info, state StatusSnapshot, store ConfigStore, status StatusProvider, writer RegisterWriter, assets fs.FS) *Handler {
+func NewHandler(build buildinfo.Info, state StatusSnapshot, store ConfigStore, status StatusProvider, writer RegisterWriter, storm StormChargeController, assets fs.FS) *Handler {
 	return &Handler{
 		build:  build,
 		state:  state,
 		store:  store,
 		status: status,
 		writer: writer,
+		storm:  storm,
 		assets: assets,
 	}
 }
@@ -63,6 +73,10 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("PUT /api/v1/config", h.handleUpdateConfig)
 	mux.HandleFunc("GET /api/v1/serial/ports", h.handleSerialPorts)
 	mux.HandleFunc("POST /api/v1/registers/{id}/write", h.handleWriteRegister)
+	mux.HandleFunc("GET /api/v1/storm-charge", h.handleGetStormCharge)
+	mux.HandleFunc("PUT /api/v1/storm-charge/settings", h.handleUpdateStormChargeSettings)
+	mux.HandleFunc("POST /api/v1/storm-charge/start", h.handleStartStormCharge)
+	mux.HandleFunc("POST /api/v1/storm-charge/cancel", h.handleCancelStormCharge)
 	mux.Handle("/", h.serveSPA())
 	return h.withCommonHeaders(mux)
 }
@@ -98,7 +112,8 @@ func (h *Handler) handleStatus(w http.ResponseWriter, _ *http.Request) {
 			"port":            cfg.Serial.Port,
 			"networkProtocol": mode,
 		},
-		"telemetry": snapshot.Telemetry,
+		"telemetry":   snapshot.Telemetry,
+		"stormCharge": h.storm.GetStormChargeStatus(),
 	})
 }
 
@@ -168,6 +183,52 @@ func (h *Handler) handleWriteRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "written"})
+}
+
+func (h *Handler) handleGetStormCharge(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, h.storm.GetStormChargeStatus())
+}
+
+func (h *Handler) handleUpdateStormChargeSettings(w http.ResponseWriter, r *http.Request) {
+	settings, ok := decodeStormChargeSettings(w, r)
+	if !ok {
+		return
+	}
+	if err := h.storm.UpdateStormChargeSettings(settings); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, h.storm.GetStormChargeStatus())
+}
+
+func (h *Handler) handleStartStormCharge(w http.ResponseWriter, r *http.Request) {
+	settings, ok := decodeStormChargeSettings(w, r)
+	if !ok {
+		return
+	}
+	if err := h.storm.StartStormCharge(settings); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, h.storm.GetStormChargeStatus())
+}
+
+func (h *Handler) handleCancelStormCharge(w http.ResponseWriter, _ *http.Request) {
+	if err := h.storm.CancelStormCharge(); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, h.storm.GetStormChargeStatus())
+}
+
+func decodeStormChargeSettings(w http.ResponseWriter, r *http.Request) (stormcharge.Settings, bool) {
+	defer r.Body.Close()
+	var settings stormcharge.Settings
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&settings); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON payload")
+		return stormcharge.Settings{}, false
+	}
+	return settings, true
 }
 
 func (h *Handler) serveSPA() http.Handler {

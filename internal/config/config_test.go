@@ -41,6 +41,23 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	if loaded.Polling.FastInterval.Duration != cfg.Polling.FastInterval.Duration {
 		t.Fatalf("fast interval mismatch: got %s want %s", loaded.Polling.FastInterval, cfg.Polling.FastInterval)
 	}
+	if loaded.StormCharge != cfg.StormCharge {
+		t.Fatalf("storm charge mismatch: got %#v want %#v", loaded.StormCharge, cfg.StormCharge)
+	}
+}
+
+func TestStormChargeDefaultsAndValidation(t *testing.T) {
+	t.Parallel()
+
+	cfg := Default()
+	if cfg.StormCharge.TargetSOC != 95 || cfg.StormCharge.MaxCurrentA != 50 || cfg.StormCharge.Timeout.Duration != 12*time.Hour {
+		t.Fatalf("unexpected storm charge defaults: %#v", cfg.StormCharge)
+	}
+
+	cfg.StormCharge.MaxCurrentA = 121
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate() expected maximum storm charge current error")
+	}
 }
 
 func TestDeviceInverterTypeNormalization(t *testing.T) {

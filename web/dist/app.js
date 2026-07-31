@@ -24,6 +24,20 @@ const els = {
   maintenanceSection: document.getElementById("maintenance-section"),
   maintenanceGrid: document.getElementById("maintenance-grid"),
   writeResult: document.getElementById("write-result"),
+  stormChargePanel: document.getElementById("storm-charge-panel"),
+  stormChargeBadge: document.getElementById("storm-charge-badge"),
+  stormChargeTitle: document.getElementById("storm-charge-title"),
+  stormChargeDetail: document.getElementById("storm-charge-detail"),
+  stormChargeStats: document.getElementById("storm-charge-stats"),
+  stormChargeForm: document.getElementById("storm-charge-form"),
+  stormTargetSOC: document.getElementById("storm-target-soc"),
+  stormMaxCurrent: document.getElementById("storm-max-current"),
+  stormTimeoutMinutes: document.getElementById("storm-timeout-minutes"),
+  stormPowerPreview: document.getElementById("storm-power-preview"),
+  stormPowerDetail: document.getElementById("storm-power-detail"),
+  stormChargeStart: document.getElementById("storm-charge-start"),
+  stormChargeCancel: document.getElementById("storm-charge-cancel"),
+  stormChargeResult: document.getElementById("storm-charge-result"),
   haYaml: document.getElementById("ha-yaml"),
   settingsRuntime: document.getElementById("settings-runtime"),
   serialPorts: document.getElementById("serial-ports"),
@@ -88,6 +102,7 @@ function renderStatus(status, { forceControls = false } = {}) {
   renderPowerOverview(byId);
   renderHeroKpis(byId);
   renderEnergy(byId);
+  renderStormCharge(status.stormCharge || {}, byId);
   renderTelemetry(telemetry);
   reconcileControlDrafts(telemetry);
   if (forceControls || (!isControlInteractionActive() && controlDrafts.size === 0)) {
@@ -95,6 +110,134 @@ function renderStatus(status, { forceControls = false } = {}) {
   }
   renderSettings(status);
   renderHAConfig(status);
+}
+
+function renderStormCharge(storm, byId) {
+  if (!els.stormChargePanel) {
+    return;
+  }
+  const supported = latestStatus?.device?.inverterType === "spi_h3p";
+  els.stormChargePanel.hidden = !supported;
+  if (!supported) {
+    return;
+  }
+  const active = Boolean(storm.active);
+  const phase = String(storm.phase || "idle");
+  const settings = storm.settings || {};
+  const voltage = Number(storm.batteryVoltage || byId.battery_voltage?.value || 0);
+  const currentSOC = Number(storm.currentSoc || byId.battery_soc?.value || 0);
+  const phaseLabel = phase.replaceAll("_", " ");
+
+  els.stormChargePanel.classList.toggle("active", active);
+  els.stormChargeBadge.className = `status-pill ${active ? "storm-active" : phase === "error" ? "bad" : ""}`;
+  els.stormChargeBadge.textContent = phaseLabel;
+  els.stormChargeTitle.textContent = active ? `Charging to ${settings.targetSoc}%` : stormPhaseTitle(phase);
+  els.stormChargeDetail.textContent = active
+    ? `${storm.remaining || "-"} remaining before the safety timeout.`
+    : storm.reason ? `Last result: ${storm.reason.replaceAll("_", " ")}.` : "Choose a target, current limit and timeout.";
+
+  setDefinitionList("storm-charge-stats", [
+    ["Battery", `${fmt.format(currentSOC)}% at ${fmt.format(voltage)} V`],
+    ["Target", `${settings.targetSoc ?? "-"}%`],
+    ["Limit", `${settings.maxCurrentA ?? "-"} A`],
+    ["Approx. power", `${fmt.format(storm.estimatedPowerWatts || 0)} W`],
+    ["Deadline", storm.deadline ? new Date(storm.deadline).toLocaleString() : "-"],
+    ["BMS limit", storm.bmsChargeLimitA ? `${fmt.format(storm.bmsChargeLimitA)} A` : "-"],
+  ]);
+
+  const editing = els.stormChargeForm.contains(document.activeElement);
+  if (!editing) {
+    els.stormTargetSOC.value = settings.targetSoc ?? 95;
+    els.stormMaxCurrent.value = settings.maxCurrentA ?? 50;
+    els.stormTimeoutMinutes.value = Math.round(durationToMinutes(settings.timeout || "12h"));
+  }
+  [els.stormTargetSOC, els.stormMaxCurrent, els.stormTimeoutMinutes].forEach((input) => {
+    input.disabled = active;
+  });
+  els.stormChargeStart.disabled = active;
+  els.stormChargeCancel.disabled = !active;
+  updateStormPowerPreview();
+}
+
+function stormPhaseTitle(phase) {
+  return {
+    idle: "Ready",
+    completed: "Target reached",
+    cancelled: "Cancelled and restored",
+    timed_out: "Timed out and restored",
+    error: "Stopped with an error",
+    restoring: "Restoring previous settings",
+  }[phase] || phase.replaceAll("_", " ");
+}
+
+function durationToMinutes(value) {
+  const input = String(value).trim();
+  const segment = /([0-9.]+)(ms|h|m|s)/g;
+  const factors = { ms: 1 / 60000, s: 1 / 60, m: 1, h: 60 };
+  let total = 0;
+  let cursor = 0;
+  let match;
+  while ((match = segment.exec(input)) !== null) {
+    if (match.index !== cursor) {
+      return 720;
+    }
+    total += Number(match[1]) * factors[match[2]];
+    cursor = segment.lastIndex;
+  }
+  return cursor === input.length && cursor > 0 ? total : 720;
+}
+
+function updateStormPowerPreview() {
+  if (!els.stormPowerPreview) {
+    return;
+  }
+  const current = Number(els.stormMaxCurrent.value || 0);
+  const voltage = Number(latestStatus?.stormCharge?.batteryVoltage || 0);
+  const watts = Math.round(current * voltage);
+  els.stormPowerPreview.textContent = voltage > 0 ? `${fmt.format(watts)} W` : "-";
+  els.stormPowerDetail.textContent = voltage > 0
+    ? `${fmt.format(current)} A × ${fmt.format(voltage)} V; actual power is controlled by the inverter and BMS.`
+    : "Calculated from live battery voltage.";
+}
+
+function stormChargePayload() {
+  return {
+    targetSoc: Number(els.stormTargetSOC.value),
+    maxCurrentA: Number(els.stormMaxCurrent.value),
+    timeout: `${Number(els.stormTimeoutMinutes.value)}m`,
+  };
+}
+
+async function startStormCharge(event) {
+  event.preventDefault();
+  const payload = stormChargePayload();
+  const watts = Math.round(payload.maxCurrentA * Number(latestStatus?.stormCharge?.batteryVoltage || 0));
+  const message = `Start storm charge to ${payload.targetSoc}% with a ${payload.maxCurrentA} A limit (about ${watts} W)? The load will temporarily move to utility.`;
+  if (!window.confirm(message)) {
+    return;
+  }
+  els.stormChargeResult.textContent = "Starting and saving previous settings...";
+  try {
+    await fetchJSON("/api/v1/storm-charge/start", { method: "POST", body: JSON.stringify(payload) });
+    els.stormChargeResult.textContent = "Storm charge started.";
+    await loadStatus({ forceControls: true });
+  } catch (error) {
+    els.stormChargeResult.textContent = error.message;
+  }
+}
+
+async function cancelStormCharge() {
+  if (!window.confirm("Cancel storm charge and restore all previous inverter settings now?")) {
+    return;
+  }
+  els.stormChargeResult.textContent = "Cancelling and restoring settings...";
+  try {
+    await fetchJSON("/api/v1/storm-charge/cancel", { method: "POST" });
+    els.stormChargeResult.textContent = "Storm charge cancelled; previous settings restored.";
+    await loadStatus({ forceControls: true });
+  } catch (error) {
+    els.stormChargeResult.textContent = error.message;
+  }
 }
 
 function renderHeader(status, byId) {
@@ -438,6 +581,7 @@ function generateSectionsViewYAML(status) {
   const telemetry = status.telemetry || [];
   const existing = new Set(telemetry.map((item) => item.id));
   const entity = (id) => `sensor.${sanitizeEntity(status.device?.name || "srne_main")}_${sanitizeEntity(id)}`;
+  const namedEntity = (component, id) => `${component}.${sanitizeEntity(status.device?.name || "srne_main")}_${sanitizeEntity(id)}`;
   const sensorLine = (id, name = null) => [
     "      - type: tile",
     `        entity: ${entity(id)}`,
@@ -559,6 +703,27 @@ function generateSectionsViewYAML(status) {
   );
   lines.push(...liveEntities.flatMap((id) => sensorLine(id)));
 
+  if (status.device?.inverterType === "spi_h3p") {
+    lines.push(
+      "  - type: grid",
+      "    cards:",
+      "      - type: heading",
+      "        heading: Storm charge",
+      "      - type: tile",
+      `        entity: ${namedEntity("switch", "storm_charge")}`,
+      "      - type: tile",
+      `        entity: ${namedEntity("number", "storm_charge_target_soc")}`,
+      "      - type: tile",
+      `        entity: ${namedEntity("number", "storm_charge_max_current")}`,
+      "      - type: tile",
+      `        entity: ${namedEntity("number", "storm_charge_timeout_minutes")}`,
+      "      - type: tile",
+      `        entity: ${namedEntity("sensor", "storm_charge_status")}`,
+      "      - type: tile",
+      `        entity: ${namedEntity("sensor", "storm_charge_estimated_power")}`
+    );
+  }
+
   lines.push(
     "  - type: grid",
     "    cards:",
@@ -637,6 +802,11 @@ function collectConfigForm() {
     },
     logging: {
       level: els.loggingLevel.value,
+    },
+    stormCharge: latestConfig?.stormCharge || {
+      targetSoc: 95,
+      maxCurrentA: 50,
+      timeout: "12h",
     },
   };
 }
@@ -846,6 +1016,9 @@ async function bootstrap() {
     });
   });
   els.configForm.addEventListener("submit", saveConfig);
+  els.stormChargeForm?.addEventListener("submit", startStormCharge);
+  els.stormChargeCancel?.addEventListener("click", cancelStormCharge);
+  els.stormMaxCurrent?.addEventListener("input", updateStormPowerPreview);
   startAutoRefresh();
 
   try {

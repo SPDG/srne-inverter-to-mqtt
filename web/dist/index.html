@@ -69,6 +69,51 @@
         </section>
 
         <section id="view-controls" class="tab-view">
+          <section id="storm-charge-panel" class="panel storm-charge-panel">
+            <div class="panel-header">
+              <div>
+                <h2>Storm Charge</h2>
+                <p>Temporarily move the load to utility and charge the battery from AC before an expected outage.</p>
+              </div>
+              <span id="storm-charge-badge" class="status-pill">idle</span>
+            </div>
+            <div class="storm-charge-layout">
+              <div class="storm-charge-summary">
+                <span class="storm-bolt" aria-hidden="true"></span>
+                <div>
+                  <span class="telemetry-label">Session</span>
+                  <strong id="storm-charge-title">Ready</strong>
+                  <p id="storm-charge-detail">Choose a target, current limit and timeout.</p>
+                </div>
+                <dl id="storm-charge-stats" class="storm-charge-stats"></dl>
+              </div>
+              <form id="storm-charge-form" class="storm-charge-form">
+                <label>
+                  <span>Target SOC</span>
+                  <div class="input-with-unit"><input id="storm-target-soc" type="number" min="50" max="100" step="1" required><span>%</span></div>
+                </label>
+                <label>
+                  <span>Maximum grid charge current</span>
+                  <div class="input-with-unit"><input id="storm-max-current" type="number" min="1" max="120" step="1" required><span>A</span></div>
+                </label>
+                <label>
+                  <span>Safety timeout</span>
+                  <div class="input-with-unit"><input id="storm-timeout-minutes" type="number" min="5" max="1440" step="5" required><span>min</span></div>
+                </label>
+                <div class="storm-power-preview">
+                  <span>Approximate charge power</span>
+                  <strong id="storm-power-preview">-</strong>
+                  <small id="storm-power-detail">Calculated from live battery voltage.</small>
+                </div>
+                <div class="storm-actions">
+                  <button id="storm-charge-start" class="action-button storm-start" type="submit">Start storm charge</button>
+                  <button id="storm-charge-cancel" class="action-button storm-cancel" type="button" disabled>Cancel and restore</button>
+                  <span id="storm-charge-result" class="save-result"></span>
+                </div>
+              </form>
+            </div>
+          </section>
+
           <section class="panel">
             <div class="panel-header">
               <div>

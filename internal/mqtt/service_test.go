@@ -1,6 +1,7 @@
 package mqtt
 
 import (
+	"encoding/json"
 	"sync"
 	"testing"
 	"time"
@@ -158,6 +159,72 @@ func TestHESPProfileKeepsGridDiscovery(t *testing.T) {
 
 	if got := staleDiscoveryTopics(cfg, "srne-hesp"); len(got) != 0 {
 		t.Fatalf("HESP stale topics = %#v, want none", got)
+	}
+}
+
+func TestStormChargeDiscoveryPublishesHAControlsAndPowerSensor(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.Default()
+	cfg.Device.Name = "srne-002"
+	cfg.MQTT.TopicPrefix = "srne/srne-002"
+	cfg.MQTT.DiscoveryPrefix = "homeassistant"
+	client := &recordingClient{}
+	service := &Service{
+		build:         buildinfo.Info{Version: "test"},
+		client:        client,
+		lastPublished: make(map[string]string),
+	}
+
+	if err := service.publishStormChargeDiscovery(cfg, "srne_002"); err != nil {
+		t.Fatalf("publishStormChargeDiscovery() error = %v", err)
+	}
+
+	wantTopics := map[string]bool{
+		"homeassistant/switch/srne_002/storm_charge/config":                 false,
+		"homeassistant/number/srne_002/storm_charge_target_soc/config":      false,
+		"homeassistant/number/srne_002/storm_charge_max_current/config":     false,
+		"homeassistant/number/srne_002/storm_charge_timeout_minutes/config": false,
+		"homeassistant/sensor/srne_002/storm_charge_estimated_power/config": false,
+	}
+	for _, published := range client.publishes {
+		if _, ok := wantTopics[published.topic]; !ok {
+			continue
+		}
+		wantTopics[published.topic] = true
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(published.payload), &payload); err != nil {
+			t.Fatalf("decode %s payload: %v", published.topic, err)
+		}
+		if payload["availability_topic"] != "srne/srne-002/availability" {
+			t.Fatalf("%s availability topic = %#v", published.topic, payload["availability_topic"])
+		}
+	}
+	for topic, found := range wantTopics {
+		if !found {
+			t.Fatalf("discovery topic %s was not published", topic)
+		}
+	}
+}
+
+func TestClearStormChargeDiscoveryRemovesAllEntities(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.Default()
+	cfg.MQTT.DiscoveryPrefix = "homeassistant"
+	client := &recordingClient{}
+	service := &Service{client: client, lastPublished: make(map[string]string)}
+
+	if err := service.clearStormChargeDiscovery(cfg, "srne_main"); err != nil {
+		t.Fatalf("clearStormChargeDiscovery() error = %v", err)
+	}
+	if got := len(client.publishes); got != 9 {
+		t.Fatalf("cleared discovery topic count = %d, want 9", got)
+	}
+	for _, published := range client.publishes {
+		if published.payload != "" || !published.retained {
+			t.Fatalf("clear publish = %#v, want empty retained payload", published)
+		}
 	}
 }
 

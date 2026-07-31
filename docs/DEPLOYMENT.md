@@ -15,6 +15,7 @@ Recommended:
 
 - binary: `/opt/srne-inverter-to-mqtt/srne-inverter-to-mqtt`
 - config: `/etc/srne-inverter-to-mqtt/config.yaml`
+- automatic storm-charge recovery state: `/etc/srne-inverter-to-mqtt/config.yaml.storm-charge-state.yaml`
 - systemd unit: `/etc/systemd/system/srne-inverter-to-mqtt.service`
 
 A ready-to-use unit file is included at [`deploy/systemd/srne-inverter-to-mqtt.service`](../deploy/systemd/srne-inverter-to-mqtt.service).
@@ -63,3 +64,4 @@ curl http://127.0.0.1:8080/healthz
 - For Ethernet converters, use `rtu_over_tcp` in transparent server mode or `modbus_tcp` when the converter performs Modbus TCP-to-RTU translation.
 - If port `8080` is already occupied, change `http.listen` in the YAML config.
 - The service publishes MQTT availability and Home Assistant Discovery automatically after connect.
+- The storm-charge recovery file is created atomically with mode `0600` when a session starts. Keep it next to the config and do not edit it manually while the service is running.

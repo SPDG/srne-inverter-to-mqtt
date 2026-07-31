@@ -17,11 +17,16 @@ import (
 	"github.com/tomasz/srne-inverter-to-mqtt/internal/config"
 	"github.com/tomasz/srne-inverter-to-mqtt/internal/registers"
 	"github.com/tomasz/srne-inverter-to-mqtt/internal/state"
+	"github.com/tomasz/srne-inverter-to-mqtt/internal/stormcharge"
 )
 
 type ConfigProvider interface {
 	GetConfig() config.Config
 	WriteRegister(id string, value any) error
+	GetStormChargeStatus() stormcharge.Status
+	UpdateStormChargeSettings(stormcharge.Settings) error
+	StartStormCharge(stormcharge.Settings) error
+	CancelStormCharge() error
 }
 
 type Service struct {
@@ -104,6 +109,10 @@ func (s *Service) sync() {
 
 	if err := s.publishTelemetry(cfg); err != nil {
 		s.recordError("publish telemetry", err)
+		return
+	}
+	if err := s.publishStormCharge(cfg); err != nil {
+		s.recordError("publish storm charge", err)
 		return
 	}
 
@@ -280,7 +289,148 @@ func (s *Service) publishDiscovery(cfg config.Config) error {
 			return err
 		}
 	}
+	inverterType, _ := cfg.Device.NormalizedInverterType()
+	if inverterType == registers.InverterTypeSPIH3P {
+		if err := s.publishStormChargeDiscovery(cfg, deviceID); err != nil {
+			return err
+		}
+	} else {
+		if err := s.clearStormChargeDiscovery(cfg, deviceID); err != nil {
+			return err
+		}
+	}
 
+	return nil
+}
+
+func (s *Service) publishStormChargeDiscovery(cfg config.Config, deviceID string) error {
+	device := map[string]any{
+		"identifiers":  []string{deviceID},
+		"name":         cfg.Device.Name,
+		"manufacturer": "SRNE",
+		"model":        "SRNE Inverter",
+		"sw_version":   s.build.Version,
+	}
+	entities := []struct {
+		component string
+		objectID  string
+		payload   map[string]any
+	}{
+		{
+			component: "switch",
+			objectID:  "storm_charge",
+			payload: map[string]any{
+				"name": "Storm Charge", "icon": "mdi:weather-lightning",
+				"state_topic": stateTopic(cfg, "storm_charge_active"), "command_topic": commandTopic(cfg, "storm_charge"),
+				"payload_on": "ON", "payload_off": "OFF", "state_on": "ON", "state_off": "OFF",
+				"entity_category": "config",
+			},
+		},
+		{
+			component: "number",
+			objectID:  "storm_charge_target_soc",
+			payload: map[string]any{
+				"name": "Storm Charge Target SOC", "icon": "mdi:battery-charging-100",
+				"state_topic": stateTopic(cfg, "storm_charge_target_soc"), "command_topic": commandTopic(cfg, "storm_charge_target_soc"),
+				"min": 50, "max": 100, "step": 1, "mode": "box", "unit_of_measurement": "%",
+				"entity_category": "config",
+			},
+		},
+		{
+			component: "number",
+			objectID:  "storm_charge_max_current",
+			payload: map[string]any{
+				"name": "Storm Charge Maximum Current", "icon": "mdi:current-dc",
+				"state_topic": stateTopic(cfg, "storm_charge_max_current"), "command_topic": commandTopic(cfg, "storm_charge_max_current"),
+				"min": 1, "max": 120, "step": 1, "mode": "box", "unit_of_measurement": "A",
+				"device_class": "current", "entity_category": "config",
+			},
+		},
+		{
+			component: "number",
+			objectID:  "storm_charge_timeout_minutes",
+			payload: map[string]any{
+				"name": "Storm Charge Timeout", "icon": "mdi:timer-alert-outline",
+				"state_topic": stateTopic(cfg, "storm_charge_timeout_minutes"), "command_topic": commandTopic(cfg, "storm_charge_timeout_minutes"),
+				"min": 5, "max": 1440, "step": 5, "mode": "box", "unit_of_measurement": "min",
+				"entity_category": "config",
+			},
+		},
+		{
+			component: "sensor",
+			objectID:  "storm_charge_status",
+			payload: map[string]any{
+				"name": "Storm Charge Status", "icon": "mdi:weather-lightning-rainy", "state_topic": stateTopic(cfg, "storm_charge_status"),
+			},
+		},
+		{
+			component: "sensor",
+			objectID:  "storm_charge_estimated_power",
+			payload: map[string]any{
+				"name": "Storm Charge Estimated Power", "icon": "mdi:flash",
+				"state_topic": stateTopic(cfg, "storm_charge_estimated_power"), "unit_of_measurement": "W",
+				"device_class": "power", "state_class": "measurement",
+			},
+		},
+		{
+			component: "sensor",
+			objectID:  "storm_charge_deadline",
+			payload: map[string]any{
+				"name": "Storm Charge Deadline", "icon": "mdi:calendar-clock",
+				"state_topic": stateTopic(cfg, "storm_charge_deadline"), "device_class": "timestamp",
+			},
+		},
+		{
+			component: "sensor",
+			objectID:  "storm_charge_remaining",
+			payload: map[string]any{
+				"name": "Storm Charge Remaining", "icon": "mdi:timer-sand", "state_topic": stateTopic(cfg, "storm_charge_remaining"),
+			},
+		},
+		{
+			component: "sensor",
+			objectID:  "storm_charge_reason",
+			payload: map[string]any{
+				"name": "Storm Charge Last Result", "icon": "mdi:information-outline",
+				"state_topic": stateTopic(cfg, "storm_charge_reason"), "entity_category": "diagnostic",
+			},
+		},
+	}
+
+	for _, entity := range entities {
+		entity.payload["unique_id"] = fmt.Sprintf("%s_%s", deviceID, entity.objectID)
+		entity.payload["availability_topic"] = availabilityTopic(cfg)
+		entity.payload["device"] = device
+		body, err := json.Marshal(entity.payload)
+		if err != nil {
+			return err
+		}
+		if err := s.publish(cfg, discoveryTopic(cfg, entity.component, deviceID, entity.objectID), string(body), true); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) clearStormChargeDiscovery(cfg config.Config, deviceID string) error {
+	for _, entity := range []struct {
+		component string
+		objectID  string
+	}{
+		{component: "switch", objectID: "storm_charge"},
+		{component: "number", objectID: "storm_charge_target_soc"},
+		{component: "number", objectID: "storm_charge_max_current"},
+		{component: "number", objectID: "storm_charge_timeout_minutes"},
+		{component: "sensor", objectID: "storm_charge_status"},
+		{component: "sensor", objectID: "storm_charge_estimated_power"},
+		{component: "sensor", objectID: "storm_charge_deadline"},
+		{component: "sensor", objectID: "storm_charge_remaining"},
+		{component: "sensor", objectID: "storm_charge_reason"},
+	} {
+		if err := s.publish(cfg, discoveryTopic(cfg, entity.component, deviceID, entity.objectID), "", true); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -326,6 +476,37 @@ func (s *Service) publishTelemetry(cfg config.Config) error {
 	return nil
 }
 
+func (s *Service) publishStormCharge(cfg config.Config) error {
+	status := s.provider.GetStormChargeStatus()
+	values := map[string]string{
+		"storm_charge_active":          map[bool]string{true: "ON", false: "OFF"}[status.Active],
+		"storm_charge_status":          status.Phase,
+		"storm_charge_target_soc":      strconv.Itoa(status.Settings.TargetSOC),
+		"storm_charge_max_current":     strconv.FormatFloat(status.Settings.MaxCurrentA, 'f', 1, 64),
+		"storm_charge_timeout_minutes": strconv.FormatFloat(status.Settings.Timeout.Duration.Minutes(), 'f', 0, 64),
+		"storm_charge_estimated_power": strconv.Itoa(status.EstimatedPowerWatts),
+		"storm_charge_remaining":       status.Remaining,
+		"storm_charge_reason":          status.Reason,
+	}
+	if status.Deadline != nil {
+		values["storm_charge_deadline"] = status.Deadline.UTC().Format(time.RFC3339)
+	} else {
+		values["storm_charge_deadline"] = ""
+	}
+
+	for id, payload := range values {
+		topic := stateTopic(cfg, id)
+		if last, ok := s.getLastPublished(topic); ok && last == payload {
+			continue
+		}
+		if err := s.publish(cfg, topic, payload, cfg.MQTT.Retain); err != nil {
+			return err
+		}
+		s.setLastPublished(topic, payload)
+	}
+	return nil
+}
+
 func (s *Service) publish(cfg config.Config, topic, payload string, retained bool) error {
 	s.mu.Lock()
 	client := s.client
@@ -355,6 +536,17 @@ func (s *Service) subscribeCommands(client paho.Client, cfg config.Config) error
 		subscriptions[topic] = 0
 		routes[topic] = reg
 	}
+	inverterType, _ := cfg.Device.NormalizedInverterType()
+	if inverterType == registers.InverterTypeSPIH3P {
+		for _, id := range []string{
+			"storm_charge",
+			"storm_charge_target_soc",
+			"storm_charge_max_current",
+			"storm_charge_timeout_minutes",
+		} {
+			subscriptions[commandTopic(cfg, id)] = 0
+		}
+	}
 
 	if len(subscriptions) == 0 {
 		return nil
@@ -362,11 +554,14 @@ func (s *Service) subscribeCommands(client paho.Client, cfg config.Config) error
 
 	token := client.SubscribeMultiple(subscriptions, func(_ paho.Client, msg paho.Message) {
 		reg, ok := routes[msg.Topic()]
-		if !ok {
-			log.Printf("mqtt command ignored topic=%s reason=unknown-topic", msg.Topic())
+		if ok {
+			s.handleCommand(reg)(client, msg)
 			return
 		}
-		s.handleCommand(reg)(client, msg)
+		if s.handleStormChargeCommand(cfg, msg) {
+			return
+		}
+		log.Printf("mqtt command ignored topic=%s reason=unknown-topic", msg.Topic())
 	})
 	if ok := token.WaitTimeout(10 * time.Second); !ok {
 		return fmt.Errorf("mqtt subscribe timeout for command topics")
@@ -376,6 +571,64 @@ func (s *Service) subscribeCommands(client paho.Client, cfg config.Config) error
 	}
 
 	return nil
+}
+
+func (s *Service) handleStormChargeCommand(cfg config.Config, msg paho.Message) bool {
+	payload := strings.TrimSpace(string(msg.Payload()))
+	if payload == "" {
+		return true
+	}
+
+	var err error
+	switch msg.Topic() {
+	case commandTopic(cfg, "storm_charge"):
+		switch strings.ToUpper(payload) {
+		case "ON":
+			err = s.provider.StartStormCharge(s.provider.GetStormChargeStatus().Settings)
+		case "OFF":
+			err = s.provider.CancelStormCharge()
+		default:
+			err = fmt.Errorf("storm_charge accepts ON or OFF")
+		}
+	case commandTopic(cfg, "storm_charge_target_soc"):
+		settings := s.provider.GetStormChargeStatus().Settings
+		value, parseErr := strconv.Atoi(payload)
+		if parseErr != nil {
+			err = fmt.Errorf("invalid target SOC %q", payload)
+		} else {
+			settings.TargetSOC = value
+			err = s.provider.UpdateStormChargeSettings(settings)
+		}
+	case commandTopic(cfg, "storm_charge_max_current"):
+		settings := s.provider.GetStormChargeStatus().Settings
+		value, parseErr := strconv.ParseFloat(payload, 64)
+		if parseErr != nil {
+			err = fmt.Errorf("invalid maximum current %q", payload)
+		} else {
+			settings.MaxCurrentA = value
+			err = s.provider.UpdateStormChargeSettings(settings)
+		}
+	case commandTopic(cfg, "storm_charge_timeout_minutes"):
+		settings := s.provider.GetStormChargeStatus().Settings
+		value, parseErr := strconv.ParseFloat(payload, 64)
+		if parseErr != nil {
+			err = fmt.Errorf("invalid timeout %q", payload)
+		} else {
+			settings.Timeout = config.Duration{Duration: time.Duration(value * float64(time.Minute))}
+			err = s.provider.UpdateStormChargeSettings(settings)
+		}
+	default:
+		return false
+	}
+
+	if err != nil {
+		log.Printf("mqtt storm charge command failed topic=%s payload=%q err=%v", msg.Topic(), payload, err)
+		return true
+	}
+	if publishErr := s.publishStormCharge(s.provider.GetConfig()); publishErr != nil {
+		log.Printf("mqtt storm charge state publish failed: %v", publishErr)
+	}
+	return true
 }
 
 func (s *Service) handleCommand(reg registers.Register) paho.MessageHandler {

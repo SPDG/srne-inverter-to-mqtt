@@ -31,3 +31,8 @@ http:
 
 logging:
   level: info
+
+storm_charge:
+  target_soc: 95
+  max_current_a: 50
+  timeout: 12h

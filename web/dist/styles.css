@@ -315,6 +315,191 @@ select {
   color: #34aaf4;
 }
 
+.storm-charge-panel {
+  position: relative;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(52, 170, 244, 0.16), transparent 34%),
+    linear-gradient(135deg, #171b1f 0%, #172027 100%);
+}
+
+.storm-charge-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: #596673;
+}
+
+.storm-charge-panel.active::before {
+  background: linear-gradient(#34aaf4, #44df83);
+  box-shadow: 0 0 20px rgba(52, 170, 244, 0.55);
+}
+
+.status-pill.storm-active {
+  border-color: rgba(52, 170, 244, 0.7);
+  background: #0d3554;
+  color: #74c8ff;
+}
+
+.storm-charge-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(460px, 1.2fr);
+  gap: 18px;
+  padding: 18px;
+}
+
+.storm-charge-summary {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  align-content: start;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid #2d353e;
+  border-radius: 8px;
+  background: rgba(13, 19, 24, 0.58);
+}
+
+.storm-charge-summary strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 24px;
+}
+
+.storm-charge-summary p {
+  margin-top: 6px;
+  color: #8d9aa8;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.storm-bolt {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #1c8ad7;
+  border-radius: 8px;
+  background: #0d3554;
+}
+
+.storm-bolt::before {
+  content: "";
+  width: 18px;
+  height: 28px;
+  background: #74c8ff;
+  clip-path: polygon(58% 0, 12% 56%, 47% 56%, 30% 100%, 88% 42%, 54% 42%);
+}
+
+.storm-charge-stats {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+  margin: 8px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid #2d353e;
+}
+
+.storm-charge-stats dt {
+  color: #8d9aa8;
+  font-size: 11px;
+}
+
+.storm-charge-stats dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.storm-charge-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  align-content: start;
+}
+
+.storm-charge-form label {
+  display: grid;
+  gap: 7px;
+  color: #aab5c1;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.input-with-unit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border: 1px solid #313941;
+  border-radius: 7px;
+  background: #22282e;
+  overflow: hidden;
+}
+
+.input-with-unit input {
+  min-width: 0;
+  width: 100%;
+  padding: 11px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #eef3f8;
+}
+
+.input-with-unit span {
+  padding: 0 11px;
+  color: #74c8ff;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12px;
+}
+
+.storm-power-preview {
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid #2d4b61;
+  border-radius: 7px;
+  background: rgba(13, 53, 84, 0.38);
+}
+
+.storm-power-preview span,
+.storm-power-preview small {
+  color: #8d9aa8;
+  font-size: 11px;
+}
+
+.storm-power-preview strong {
+  color: #74c8ff;
+  font-size: 21px;
+}
+
+.storm-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+  padding-top: 3px;
+}
+
+.action-button.storm-start {
+  border-color: #1c8ad7;
+  background: #0d3554;
+  color: #74c8ff;
+}
+
+.action-button.storm-cancel:not(:disabled) {
+  border-color: #8a4545;
+  color: #ff9b96;
+}
+
+.action-button:disabled,
+.input-with-unit input:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
 .metric-tile,
 .power-tile,
 .telemetry-card,
@@ -836,7 +1021,8 @@ code {
 
 @media (max-width: 1080px) {
   .hero-grid,
-  .settings-grid {
+  .settings-grid,
+  .storm-charge-layout {
     grid-template-columns: 1fr;
   }
 
@@ -942,7 +1128,13 @@ code {
   }
 
   .service-grid,
-  .config-form {
+  .config-form,
+  .storm-charge-form {
     grid-template-columns: 1fr;
+  }
+
+  .storm-actions,
+  .storm-charge-stats {
+    grid-column: 1;
   }
 }

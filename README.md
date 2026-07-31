@@ -12,6 +12,7 @@ Linux-first single-binary bridge for polling SRNE inverters over Modbus RTU or T
 - Modbus RTU, transparent RTU-over-TCP, and Modbus TCP gateway transports,
 - model-aware single-phase, SPI H3P, and HESP SH3 inverter profiles,
 - Home Assistant MQTT Discovery for telemetry and writable controls,
+- managed storm charging with target SOC, current limit, timeout, rollback, and manual cancellation,
 - built-in control panel with live telemetry, safe writes, and serial port discovery,
 - GitHub Actions workflows for CI and tagged releases on Linux.
 
@@ -39,7 +40,7 @@ Current scope:
 - exposes writable inverter settings through the web panel,
 - publishes telemetry to MQTT state topics,
 - publishes Home Assistant Discovery for both read-only sensors and writable `select` / `number` controls,
-- keeps everything in a single deployable binary plus one YAML config file.
+- keeps everything in a single deployable binary plus one user-managed YAML config file.
 
 ## Quick start
 
@@ -69,6 +70,13 @@ Select the hardware profile explicitly:
 
 The legacy `three_phase` value is accepted as an alias for `spi_h3p`.
 
+Storm charge defaults are configured under `storm_charge`. An active session
+temporarily switches the SPI H3P to utility output and hybrid PV+AC charging,
+then restores the exact previous inverter settings after reaching the
+target SOC, timing out, losing the grid, encountering a fault, or being
+cancelled manually. Crash recovery data is written automatically next to the
+main config as `<config>.storm-charge-state.yaml`.
+
 The probe command uses the same transports, for example:
 
 ```bash
@@ -89,6 +97,10 @@ Hardware-specific operating notes and the source manuals are available in
 - `PUT /api/v1/config`
 - `GET /api/v1/serial/ports`
 - `POST /api/v1/registers/{id}/write`
+- `GET /api/v1/storm-charge`
+- `PUT /api/v1/storm-charge/settings`
+- `POST /api/v1/storm-charge/start`
+- `POST /api/v1/storm-charge/cancel`
 
 `/api/v1/status` returns runtime service state and the latest telemetry snapshot used by both the web panel and MQTT publishing.
 
@@ -101,6 +113,10 @@ Writable settings are exposed to Home Assistant as MQTT Discovery controls:
 - read-only values stay as regular `sensor` entities.
 
 This makes settings such as output source priority or charger source priority writable both from the built-in web panel and directly from Home Assistant.
+
+Storm charge adds a Home Assistant `switch`, configurable target SOC, maximum
+grid-charge current and timeout `number` entities, plus status, deadline,
+remaining-time and estimated-power sensors.
 
 ## Credits
 

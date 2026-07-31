@@ -54,12 +54,13 @@ func (d Duration) MarshalJSON() ([]byte, error) {
 }
 
 type Config struct {
-	Device  DeviceConfig  `yaml:"device" json:"device"`
-	Serial  SerialConfig  `yaml:"serial" json:"serial"`
-	Polling PollingConfig `yaml:"polling" json:"polling"`
-	MQTT    MQTTConfig    `yaml:"mqtt" json:"mqtt"`
-	HTTP    HTTPConfig    `yaml:"http" json:"http"`
-	Logging LoggingConfig `yaml:"logging" json:"logging"`
+	Device      DeviceConfig      `yaml:"device" json:"device"`
+	Serial      SerialConfig      `yaml:"serial" json:"serial"`
+	Polling     PollingConfig     `yaml:"polling" json:"polling"`
+	MQTT        MQTTConfig        `yaml:"mqtt" json:"mqtt"`
+	HTTP        HTTPConfig        `yaml:"http" json:"http"`
+	Logging     LoggingConfig     `yaml:"logging" json:"logging"`
+	StormCharge StormChargeConfig `yaml:"storm_charge" json:"stormCharge"`
 }
 
 type DeviceConfig struct {
@@ -102,6 +103,12 @@ type LoggingConfig struct {
 	Level string `yaml:"level" json:"level"`
 }
 
+type StormChargeConfig struct {
+	TargetSOC   int      `yaml:"target_soc" json:"targetSoc"`
+	MaxCurrentA float64  `yaml:"max_current_a" json:"maxCurrentA"`
+	Timeout     Duration `yaml:"timeout" json:"timeout"`
+}
+
 func Default() Config {
 	return Config{
 		Device: DeviceConfig{
@@ -135,6 +142,11 @@ func Default() Config {
 		},
 		Logging: LoggingConfig{
 			Level: "info",
+		},
+		StormCharge: StormChargeConfig{
+			TargetSOC:   95,
+			MaxCurrentA: 50,
+			Timeout:     Duration{Duration: 12 * time.Hour},
 		},
 	}
 }
@@ -255,6 +267,16 @@ func (c Config) Validate() error {
 
 	if level := strings.ToLower(strings.TrimSpace(c.Logging.Level)); level == "" {
 		return errors.New("logging.level is required")
+	}
+
+	if c.StormCharge.TargetSOC < 50 || c.StormCharge.TargetSOC > 100 {
+		return errors.New("storm_charge.target_soc must be between 50 and 100")
+	}
+	if c.StormCharge.MaxCurrentA <= 0 || c.StormCharge.MaxCurrentA > 120 {
+		return errors.New("storm_charge.max_current_a must be greater than 0 and at most 120")
+	}
+	if c.StormCharge.Timeout.Duration < 5*time.Minute || c.StormCharge.Timeout.Duration > 24*time.Hour {
+		return errors.New("storm_charge.timeout must be between 5m and 24h")
 	}
 
 	return nil
