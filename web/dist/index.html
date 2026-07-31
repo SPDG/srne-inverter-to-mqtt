@@ -162,23 +162,41 @@
                 <h2>Inverter Clock</h2>
                 <p>Set the inverter's local wall clock used for daily counters and timed charging.</p>
               </div>
-              <button id="refresh-inverter-clock" class="action-button" type="button">Read clock</button>
+              <div class="clock-header-actions">
+                <span id="inverter-clock-status" class="status-pill">Not read</span>
+                <button id="refresh-inverter-clock" class="action-button" type="button">Read clock</button>
+              </div>
             </div>
-            <form id="inverter-clock-form" class="clock-form">
-              <div class="clock-reading">
-                <span class="telemetry-label">Current inverter time</span>
-                <strong id="inverter-clock-reading">Not read yet</strong>
+            <div class="clock-layout">
+              <div id="inverter-clock-current" class="clock-current-card">
+                <div class="clock-face" aria-hidden="true">
+                  <span class="clock-hand-hour"></span>
+                  <span class="clock-hand-minute"></span>
+                  <span class="clock-center"></span>
+                </div>
+                <div class="clock-reading">
+                  <span class="telemetry-label">Inverter local time</span>
+                  <strong id="inverter-clock-time">--:--:--</strong>
+                  <span id="inverter-clock-date" class="clock-date">Not read yet</span>
+                  <small>Used by daily counters and timed utility charging.</small>
+                </div>
               </div>
-              <label>
-                <span>New local date and time</span>
-                <input id="inverter-clock-input" type="datetime-local" step="1" required>
-              </label>
-              <div class="clock-actions">
-                <button id="use-browser-clock" class="action-button" type="button">Use this device's time</button>
-                <button class="action-button primary" type="submit">Set inverter clock</button>
-              </div>
-              <span id="inverter-clock-result" class="save-result"></span>
-            </form>
+              <form id="inverter-clock-form" class="clock-form">
+                <div class="clock-form-intro">
+                  <strong>Set local clock</strong>
+                  <span>Choose a date and time, or copy the clock from this browser.</span>
+                </div>
+                <label>
+                  <span>New local date and time</span>
+                  <input id="inverter-clock-input" type="datetime-local" step="1" required>
+                </label>
+                <div class="clock-actions">
+                  <button id="use-browser-clock" class="action-button" type="button">Use browser time</button>
+                  <button class="action-button primary" type="submit">Set inverter clock</button>
+                </div>
+                <span id="inverter-clock-result" class="save-result"></span>
+              </form>
+            </div>
           </section>
 
           <section class="panel">

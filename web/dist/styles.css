@@ -483,31 +483,160 @@ select {
   padding-top: 3px;
 }
 
-.clock-form {
-  display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(260px, 1fr) auto;
-  align-items: end;
-  gap: 18px;
+.clock-panel {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(52, 170, 244, 0.13), transparent 36%),
+    linear-gradient(135deg, #171b1f 0%, #172027 100%);
 }
 
+.clock-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: linear-gradient(#34aaf4, #1c8ad7);
+}
+
+.clock-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.status-pill.clock-reading-status {
+  color: #aab5c1;
+}
+
+.clock-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(420px, 1.2fr);
+  gap: 18px;
+  padding: 18px;
+}
+
+.clock-current-card,
+.clock-form {
+  border: 1px solid #2d353e;
+  border-radius: 8px;
+  background: rgba(13, 19, 24, 0.58);
+}
+
+.clock-current-card {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  padding: 18px;
+}
+
+.clock-face {
+  position: relative;
+  width: 54px;
+  height: 54px;
+  border: 2px solid #34aaf4;
+  border-radius: 50%;
+  background: #0d3554;
+  box-shadow: 0 0 18px rgba(52, 170, 244, 0.14);
+}
+
+.clock-hand-hour,
+.clock-hand-minute,
+.clock-center {
+  position: absolute;
+  display: block;
+  left: 50%;
+  bottom: 50%;
+  border-radius: 99px;
+  background: #74c8ff;
+  transform-origin: 50% 100%;
+}
+
+.clock-hand-hour {
+  width: 3px;
+  height: 14px;
+  transform: translateX(-50%) rotate(38deg);
+}
+
+.clock-hand-minute {
+  width: 2px;
+  height: 19px;
+  transform: translateX(-50%) rotate(128deg);
+}
+
+.clock-center {
+  left: 50%;
+  bottom: 50%;
+  width: 6px;
+  height: 6px;
+  transform: translate(-50%, 50%);
+}
+
+.clock-form {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto;
+  align-items: end;
+  gap: 14px;
+  padding: 18px;
+}
+
+.clock-form-intro,
 .clock-form label,
 .clock-reading {
   display: grid;
-  gap: 8px;
+  gap: 6px;
+}
+
+.clock-form-intro {
+  grid-column: 1 / -1;
+}
+
+.clock-form-intro strong {
+  font-size: 15px;
+}
+
+.clock-form-intro span,
+.clock-reading small {
+  color: #8d9aa8;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.clock-form label {
+  color: #aab5c1;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .clock-reading strong {
-  font-family: var(--font-display);
-  font-size: clamp(1.2rem, 2vw, 1.75rem);
+  color: #eef3f8;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: clamp(1.65rem, 3vw, 2.35rem);
+  letter-spacing: -0.04em;
+  line-height: 1;
 }
 
-.clock-reading strong.invalid {
-  color: var(--danger);
+.clock-date {
+  color: #74c8ff;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 13px;
+}
+
+.clock-current-card.invalid .clock-reading strong,
+.clock-current-card.invalid .clock-date {
+  color: #ff9b96;
 }
 
 .clock-actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 10px;
+}
+
+.clock-form .save-result {
+  grid-column: 1 / -1;
 }
 
 .action-button.storm-start {
@@ -1205,7 +1334,7 @@ code {
   .hero-grid,
   .settings-grid,
   .storm-charge-layout,
-  .clock-form {
+  .clock-layout {
     grid-template-columns: 1fr;
   }
 
@@ -1268,6 +1397,27 @@ code {
   .topbar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .clock-header-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .clock-layout {
+    padding: 14px;
+  }
+
+  .clock-form {
+    grid-template-columns: 1fr;
+  }
+
+  .clock-actions {
+    justify-content: stretch;
+  }
+
+  .clock-actions .action-button {
+    flex: 1 1 150px;
   }
 
   .top-actions {
