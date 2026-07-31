@@ -71,11 +71,13 @@ Select the hardware profile explicitly:
 The legacy `three_phase` value is accepted as an alias for `spi_h3p`.
 
 Storm charge defaults are configured under `storm_charge`. An active session
-temporarily switches the SPI H3P to utility output and hybrid PV+AC charging,
-then restores the exact previous inverter settings after reaching the
+temporarily switches the SPI H3P to utility output and requests utility-priority
+charging, then restores the exact previous inverter settings after reaching the
 target SOC, timing out, losing the grid, encountering a fault, or being
-cancelled manually. Crash recovery data is written automatically next to the
-main config as `<config>.storm-charge-state.yaml`.
+cancelled manually. If the inverter firmware rejects utility-priority charging,
+startup fails and the captured settings are restored. Crash recovery data is
+written automatically next to the main config as
+`<config>.storm-charge-state.yaml`.
 
 The probe command uses the same transports, for example:
 

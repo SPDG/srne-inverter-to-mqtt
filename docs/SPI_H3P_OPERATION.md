@@ -82,16 +82,15 @@ On start, the service persists and then temporarily changes:
 1. battery charge cut-off SOC to the selected target,
 2. mains charge current limit to the selected maximum,
 3. output source priority to `Utility` (`UTI`),
-4. charger source priority to `Hybrid` (`SNU`).
+4. charger source priority to `Utility Priority` (`CUb`).
 
 The service waits briefly after entering utility bypass before changing charger
-priority. The tested SPI-12K-H3P firmware rejects `Utility Priority` with an
-illegal-data-value Modbus exception, while `Hybrid` is accepted and enables
-grid-assisted charging when the load is in utility bypass.
+priority. If any write is rejected, startup fails and all captured settings are
+restored.
 
-Moving AC OUT to utility bypass is required for deterministic mains charging on
-SPI H3P. The manual notes that simultaneous PV and utility charging is available
-while utility bypass is loaded; while inverter output is active, only PV
+Moving AC OUT to utility bypass is required for mains charging on SPI H3P, but
+it is not sufficient by itself. The manual notes that utility charging can only
+start while utility bypass is loaded; while inverter output is active, only PV
 charging may start.
 
 The previous values are restored after the target SOC is reached, on manual
@@ -106,12 +105,22 @@ multiplied by the live battery voltage; actual power remains subject to PV/load
 conditions, inverter derating, and the BMS charge-current limit. SPI-12K-H3P
 utility charging is capped at 120 A.
 
-The workflow was validated live on `srne-002` on 2026-07-31 with a 10 A limit.
-After switching to `Utility` plus `Hybrid`, all four writes passed readback,
-three-phase grid current became non-zero, and battery current changed from
-discharging to approximately 4.8 A charging. Manual cancellation restored the
-captured values: 100% charge cut-off, 10 A mains limit, `PV Only`, and
-`Solar, Battery, Utility` output priority.
+Live validation on `srne-002` on 2026-07-31 established two firmware-specific
+limitations:
+
+- `Utility Priority` (`CUb`, raw value 1) was rejected with Modbus exception 3
+  even after utility bypass had been stable for 25 seconds.
+- `Hybrid` (`SNU`, raw value 2) was accepted, but it only supplemented AC OUT.
+  With 463 W PV, 477 W grid input, and 999 W load, the battery was still
+  discharging instead of charging toward the selected target.
+
+The application therefore uses the semantically correct `CUb` request and
+fails safely on this firmware instead of reporting a non-charging `Hybrid`
+session as successful. Every test restored the captured values: 100% charge
+cut-off, 10 A mains limit, `PV Only`, and `Solar, Battery, Utility` output
+priority. The time-slot utility-charging function described by parameters
+40-46 may provide an alternative, but its Modbus register mapping has not yet
+been identified or validated.
 
 ## Validated Low-SOC Incident
 

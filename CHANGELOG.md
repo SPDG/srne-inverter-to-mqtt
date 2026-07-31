@@ -25,6 +25,7 @@ The format is based on Keep a Changelog and the project uses Git tags for releas
 - Obsolete HESP grid controls are removed from Home Assistant Discovery when the SPI profile is active.
 - SPI operating notes distinguish normal `PV Only` charging from low-SOC recovery charging.
 - SOC threshold writes enforce the firmware's validated five-percentage-point safety gaps before sending Modbus commands.
+- Storm charge now fails and rolls back when utility-priority charging is rejected instead of treating load-only Hybrid operation as battery charging.
 
 ## [0.2.0] - 2026-07-19
 

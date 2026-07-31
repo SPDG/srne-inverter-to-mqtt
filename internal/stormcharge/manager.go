@@ -379,7 +379,7 @@ func (m *Manager) applyStormSettingsLocked() error {
 		{id: "battery_charge_cutoff_soc", value: m.runtime.Settings.TargetSOC},
 		{id: "mains_charge_current_limit", value: m.runtime.Settings.MaxCurrentA},
 		{id: "output_source_priority", value: int64(1)},
-		{id: "charger_source_priority", value: int64(2)},
+		{id: "charger_source_priority", value: int64(1)},
 	}
 	for index, write := range writes {
 		if err := m.writer.WriteRegister(write.id, write.value); err != nil {

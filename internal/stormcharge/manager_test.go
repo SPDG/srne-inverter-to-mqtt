@@ -85,8 +85,8 @@ func TestStartAndCancelRestoresPreviousSettings(t *testing.T) {
 	if got := writer.writes[4].value; got != int64(3) {
 		t.Fatalf("restored charger source = %#v, want raw 3", got)
 	}
-	if got := writer.writes[3].value; got != int64(2) {
-		t.Fatalf("storm charger source = %#v, want Hybrid raw 2", got)
+	if got := writer.writes[3].value; got != int64(1) {
+		t.Fatalf("storm charger source = %#v, want Utility Priority raw 1", got)
 	}
 	if got := writer.writes[5].value; got != int64(2) {
 		t.Fatalf("restored output source = %#v, want raw 2", got)
