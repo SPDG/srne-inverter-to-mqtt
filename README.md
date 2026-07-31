@@ -13,7 +13,7 @@ Linux-first single-binary bridge for polling SRNE inverters over Modbus RTU or T
 - model-aware single-phase, SPI H3P, and HESP SH3 inverter profiles,
 - Home Assistant MQTT Discovery for telemetry and writable controls,
 - managed storm charging with target SOC, current limit, timeout, rollback, and manual cancellation,
-- built-in control panel with live telemetry, safe writes, inverter clock setting, and serial port discovery,
+- built-in control panel with live telemetry, searchable raw Modbus data, safe writes, inverter clock setting, and serial port discovery,
 - GitHub Actions workflows for CI and tagged releases on Linux.
 
 ## Screenshots

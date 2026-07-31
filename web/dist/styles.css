@@ -899,6 +899,137 @@ select {
   color: #8d9aa8;
 }
 
+.raw-data-panel {
+  background:
+    linear-gradient(180deg, rgba(52, 170, 244, 0.04), transparent 180px),
+    #171b1f;
+}
+
+.raw-data-toolbar {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #2a3036;
+  background: #15191d;
+}
+
+.raw-search {
+  width: min(560px, 100%);
+  display: grid;
+  gap: 7px;
+  color: #aab5c1;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.raw-search input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid #313941;
+  border-radius: 7px;
+  outline: none;
+  background: #22282e;
+  color: #eef3f8;
+}
+
+.raw-search input:focus {
+  border-color: #1c8ad7;
+  box-shadow: 0 0 0 3px rgba(52, 170, 244, 0.12);
+}
+
+.raw-table-wrap {
+  width: 100%;
+  max-height: calc(100vh - 250px);
+  overflow: auto;
+}
+
+.raw-data-table {
+  width: 100%;
+  min-width: 1060px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+}
+
+.raw-data-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 10px 12px;
+  border-bottom: 1px solid #313941;
+  background: #1d2328;
+  color: #8d9aa8;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.raw-data-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #252c32;
+  color: #bdc7d2;
+  vertical-align: middle;
+}
+
+.raw-data-table tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.012);
+}
+
+.raw-data-table tbody tr:hover {
+  background: rgba(52, 170, 244, 0.07);
+}
+
+.raw-data-table code {
+  color: #a9c5dc;
+  font-size: 11px;
+}
+
+.raw-data-table .raw-address {
+  color: #74c8ff;
+  font-weight: 700;
+}
+
+.raw-name,
+.raw-value {
+  color: #eef3f8;
+  font-weight: 700;
+}
+
+.raw-value {
+  font-size: 13px;
+}
+
+.raw-group,
+.raw-access {
+  display: inline-flex;
+  border: 1px solid #313941;
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: #9eabb8;
+  white-space: nowrap;
+}
+
+.raw-access.writable {
+  border-color: rgba(52, 170, 244, 0.45);
+  color: #74c8ff;
+}
+
+.raw-updated {
+  color: #8d9aa8 !important;
+  white-space: nowrap;
+}
+
+.raw-empty {
+  padding: 28px !important;
+  color: #8d9aa8 !important;
+  text-align: center;
+}
+
 .telemetry-actions {
   display: flex;
   gap: 8px;
@@ -1069,6 +1200,19 @@ code {
   .content {
     max-width: 100vw;
     overflow-x: hidden;
+  }
+
+  .raw-data-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .raw-data-toolbar .action-button {
+    align-self: flex-start;
+  }
+
+  .raw-table-wrap {
+    max-height: calc(100vh - 285px);
   }
 
   .rail {

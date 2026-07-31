@@ -5,6 +5,7 @@ let latestStatus = null;
 let latestConfig = null;
 let refreshTimer = null;
 let haYamlMode = localStorage.getItem("srneHaYamlMode") || "dashboard";
+let rawDataItems = [];
 const controlDrafts = new Map();
 
 const els = {
@@ -20,6 +21,10 @@ const els = {
   energyGrid: document.getElementById("energy-grid"),
   telemetryGrid: document.getElementById("telemetry-grid"),
   telemetrySubtitle: document.getElementById("telemetry-subtitle"),
+  rawDataSearch: document.getElementById("raw-data-search"),
+  rawDataClear: document.getElementById("raw-data-clear"),
+  rawDataCount: document.getElementById("raw-data-count"),
+  rawDataBody: document.getElementById("raw-data-body"),
   controlsGrid: document.getElementById("controls-grid"),
   maintenanceSection: document.getElementById("maintenance-section"),
   maintenanceGrid: document.getElementById("maintenance-grid"),
@@ -147,12 +152,70 @@ function renderStatus(status, { forceControls = false } = {}) {
   renderEnergy(byId);
   renderStormCharge(status.stormCharge || {}, byId);
   renderTelemetry(telemetry);
+  renderRawData(telemetry);
   reconcileControlDrafts(telemetry);
   if (forceControls || (!isControlInteractionActive() && controlDrafts.size === 0)) {
     renderControls(telemetry);
   }
   renderSettings(status);
   renderHAConfig(status);
+}
+
+function renderRawData(items = rawDataItems) {
+  rawDataItems = [...items].sort((left, right) => {
+    const addressDifference = Number(left.address) - Number(right.address);
+    return addressDifference || String(left.id).localeCompare(String(right.id));
+  });
+
+  const query = String(els.rawDataSearch?.value || "").trim().toLowerCase();
+  const filtered = query
+    ? rawDataItems.filter((item) => rawSearchText(item).includes(query))
+    : rawDataItems;
+
+  els.rawDataCount.textContent = query
+    ? `${filtered.length} of ${rawDataItems.length} parameters`
+    : `${rawDataItems.length} parameters`;
+
+  if (!filtered.length) {
+    const message = rawDataItems.length ? "No parameters match this search." : "Waiting for Modbus data.";
+    els.rawDataBody.innerHTML = `<tr><td colspan="9" class="raw-empty">${escapeHTML(message)}</td></tr>`;
+    return;
+  }
+
+  els.rawDataBody.innerHTML = filtered.map((item) => {
+    const address = `0x${Number(item.address).toString(16).padStart(4, "0").toUpperCase()}`;
+    const access = item.writeOnly ? "Write only" : item.writable ? "Read / Write" : "Read only";
+    const accessClass = item.writable ? "raw-access writable" : "raw-access";
+    return `
+      <tr>
+        <td><code class="raw-address">${address}</code></td>
+        <td class="raw-name">${escapeHTML(item.name)}</td>
+        <td><code>${escapeHTML(item.id)}</code></td>
+        <td class="raw-value">${escapeHTML(String(item.rendered ?? "-"))}</td>
+        <td><code>${escapeHTML(String(item.raw ?? "-"))}</code></td>
+        <td>${escapeHTML(item.unit || "-")}</td>
+        <td><span class="raw-group">${escapeHTML(item.group || "-")}</span></td>
+        <td><span class="${accessClass}">${access}</span></td>
+        <td class="raw-updated">${escapeHTML(formatUpdatedAt(item.updatedAt))}</td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function rawSearchText(item) {
+  const address = Number(item.address);
+  return [
+    item.name,
+    item.id,
+    item.rendered,
+    item.raw,
+    item.value,
+    item.unit,
+    item.group,
+    item.writable ? "read write writable" : "read only",
+    String(address),
+    `0x${address.toString(16).padStart(4, "0")}`,
+  ].map((value) => String(value ?? "").toLowerCase()).join(" ");
 }
 
 function renderStormCharge(storm, byId) {
@@ -1062,6 +1125,12 @@ async function bootstrap() {
   els.stormChargeForm?.addEventListener("submit", startStormCharge);
   els.stormChargeCancel?.addEventListener("click", cancelStormCharge);
   els.stormMaxCurrent?.addEventListener("input", updateStormPowerPreview);
+  els.rawDataSearch?.addEventListener("input", () => renderRawData());
+  els.rawDataClear?.addEventListener("click", () => {
+    els.rawDataSearch.value = "";
+    els.rawDataSearch.focus();
+    renderRawData();
+  });
   els.inverterClockForm?.addEventListener("submit", setInverterClock);
   els.refreshInverterClock?.addEventListener("click", loadInverterClock);
   els.useBrowserClock?.addEventListener("click", () => {

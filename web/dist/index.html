@@ -12,6 +12,7 @@
       <button id="rail-toggle" class="rail-toggle" type="button" title="Toggle navigation"><span class="toggle-mark"></span></button>
       <div class="rail-brand"><span>S</span><strong>SRNE</strong></div>
       <button class="rail-item active" type="button" data-tab="live"><span>L</span><strong>Live data</strong></button>
+      <button class="rail-item" type="button" data-tab="raw"><span>R</span><strong>RAW data</strong></button>
       <button class="rail-item" type="button" data-tab="controls"><span>C</span><strong>Controls</strong></button>
       <button class="rail-item" type="button" data-tab="ha"><span>H</span><strong>HA config</strong></button>
       <button class="rail-item" type="button" data-tab="settings"><span>S</span><strong>Settings</strong></button>
@@ -65,6 +66,45 @@
               </div>
             </div>
             <div id="telemetry-grid" class="telemetry-grid"></div>
+          </section>
+        </section>
+
+        <section id="view-raw" class="tab-view">
+          <section class="panel raw-data-panel">
+            <div class="panel-header raw-data-header">
+              <div>
+                <h2>RAW Modbus Data</h2>
+                <p>Complete register snapshot with decoded and original values.</p>
+              </div>
+              <span id="raw-data-count" class="status-pill">0 parameters</span>
+            </div>
+            <div class="raw-data-toolbar">
+              <label class="raw-search">
+                <span>Search parameters</span>
+                <input id="raw-data-search" type="search" placeholder="Name, ID, address or value" autocomplete="off">
+              </label>
+              <button id="raw-data-clear" class="action-button" type="button">Clear</button>
+            </div>
+            <div class="raw-table-wrap">
+              <table class="raw-data-table">
+                <thead>
+                  <tr>
+                    <th>Address</th>
+                    <th>Name</th>
+                    <th>ID</th>
+                    <th>Value</th>
+                    <th>Raw</th>
+                    <th>Unit</th>
+                    <th>Group</th>
+                    <th>Access</th>
+                    <th>Updated</th>
+                  </tr>
+                </thead>
+                <tbody id="raw-data-body">
+                  <tr><td colspan="9" class="raw-empty">Waiting for Modbus data.</td></tr>
+                </tbody>
+              </table>
+            </div>
           </section>
         </section>
 
