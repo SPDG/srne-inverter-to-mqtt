@@ -32,12 +32,17 @@ const (
 var managedRegisters = map[string]struct{}{
 	"battery_charge_cutoff_soc":  {},
 	"mains_charge_current_limit": {},
-	"charger_source_priority":    {},
-	"output_source_priority":     {},
 }
+
+const (
+	timedChargeAddress = 0xE026
+	timedChargeWords   = 7
+)
 
 type RegisterWriter interface {
 	WriteRegister(id string, value any) error
+	ReadHoldingWords(address, count uint16) ([]uint16, error)
+	WriteHoldingWords(address uint16, values []uint16) error
 }
 
 type Settings struct {
@@ -47,10 +52,9 @@ type Settings struct {
 }
 
 type PreviousSettings struct {
-	BatteryChargeCutoffSOC int     `yaml:"battery_charge_cutoff_soc" json:"batteryChargeCutoffSoc"`
-	MainsChargeCurrentA    float64 `yaml:"mains_charge_current_a" json:"mainsChargeCurrentA"`
-	ChargerSourcePriority  int64   `yaml:"charger_source_priority" json:"chargerSourcePriority"`
-	OutputSourcePriority   int64   `yaml:"output_source_priority" json:"outputSourcePriority"`
+	BatteryChargeCutoffSOC int      `yaml:"battery_charge_cutoff_soc" json:"batteryChargeCutoffSoc"`
+	MainsChargeCurrentA    float64  `yaml:"mains_charge_current_a" json:"mainsChargeCurrentA"`
+	TimedChargeSchedule    []uint16 `yaml:"timed_charge_schedule" json:"timedChargeSchedule"`
 }
 
 type Runtime struct {
@@ -91,7 +95,6 @@ type Manager struct {
 	runtime       Runtime
 	resumePending bool
 	now           func() time.Time
-	sleep         func(time.Duration)
 }
 
 func New(statePath string, writer RegisterWriter, runtimeState *state.Store) (*Manager, error) {
@@ -100,9 +103,8 @@ func New(statePath string, writer RegisterWriter, runtimeState *state.Store) (*M
 		writer:    writer,
 		state:     runtimeState,
 		now:       func() time.Time { return time.Now().UTC() },
-		sleep:     time.Sleep,
 		runtime: Runtime{
-			Version: 1,
+			Version: 2,
 			Phase:   PhaseIdle,
 		},
 	}
@@ -185,14 +187,14 @@ func (m *Manager) Start(settings Settings) error {
 		return fmt.Errorf("requested %.1f A exceeds the current BMS charge limit of %.1f A", settings.MaxCurrentA, limit)
 	}
 
-	previous, err := previousSettings(snapshot)
+	previous, err := m.previousSettings(snapshot)
 	if err != nil {
 		return err
 	}
 
 	now := m.now()
 	m.runtime = Runtime{
-		Version:   1,
+		Version:   2,
 		Active:    true,
 		Phase:     PhaseStarting,
 		Settings:  settings,
@@ -202,7 +204,7 @@ func (m *Manager) Start(settings Settings) error {
 		UpdatedAt: now,
 	}
 	if err := m.saveLocked(); err != nil {
-		m.runtime = Runtime{Version: 1, Phase: PhaseIdle}
+		m.runtime = Runtime{Version: 2, Phase: PhaseIdle}
 		return err
 	}
 
@@ -378,16 +380,19 @@ func (m *Manager) applyStormSettingsLocked() error {
 	}{
 		{id: "battery_charge_cutoff_soc", value: m.runtime.Settings.TargetSOC},
 		{id: "mains_charge_current_limit", value: m.runtime.Settings.MaxCurrentA},
-		{id: "output_source_priority", value: int64(1)},
-		{id: "charger_source_priority", value: int64(1)},
 	}
-	for index, write := range writes {
+	for _, write := range writes {
 		if err := m.writer.WriteRegister(write.id, write.value); err != nil {
 			return fmt.Errorf("write %s: %w", write.id, err)
 		}
-		if index == 2 {
-			m.sleep(2 * time.Second)
-		}
+	}
+
+	// Near-full-day utility windows avoid depending on the inverter's current RTC.
+	// This firmware validates all three slot pairs when the function is enabled,
+	// rejects zero-length unused slots, and normalizes a 00:00 start to 00:01.
+	schedule := []uint16{0x0001, 0x173B, 0x0001, 0x173B, 0x0001, 0x173B, 1}
+	if err := m.writeTimedChargeSchedule(schedule); err != nil {
+		return fmt.Errorf("enable timed utility charging: %w", err)
 	}
 	return nil
 }
@@ -398,17 +403,21 @@ func (m *Manager) restoreLocked(finalPhase, reason string) error {
 	m.runtime.UpdatedAt = m.now()
 	_ = m.saveLocked()
 
+	errorsFound := make([]string, 0)
+	if len(m.runtime.Previous.TimedChargeSchedule) == timedChargeWords {
+		if err := m.writeTimedChargeSchedule(m.runtime.Previous.TimedChargeSchedule); err != nil {
+			errorsFound = append(errorsFound, fmt.Sprintf("timed utility charging: %v", err))
+		}
+	}
+
 	writes := []struct {
 		id    string
 		value any
 	}{
-		{id: "charger_source_priority", value: m.runtime.Previous.ChargerSourcePriority},
-		{id: "output_source_priority", value: m.runtime.Previous.OutputSourcePriority},
 		{id: "mains_charge_current_limit", value: m.runtime.Previous.MainsChargeCurrentA},
 		{id: "battery_charge_cutoff_soc", value: m.runtime.Previous.BatteryChargeCutoffSOC},
 	}
 
-	errorsFound := make([]string, 0)
 	for _, write := range writes {
 		if err := m.writer.WriteRegister(write.id, write.value); err != nil {
 			errorsFound = append(errorsFound, fmt.Sprintf("%s: %v", write.id, err))
@@ -436,6 +445,31 @@ func (m *Manager) restoreLocked(finalPhase, reason string) error {
 	return nil
 }
 
+func (m *Manager) writeTimedChargeSchedule(values []uint16) error {
+	if len(values) != timedChargeWords {
+		return fmt.Errorf("timed utility charging requires %d words", timedChargeWords)
+	}
+
+	// Disable first when restoring an inactive schedule, then restore all slot
+	// values. For an active schedule, enable only after every slot is valid.
+	if values[6] == 0 {
+		if err := m.writer.WriteHoldingWords(timedChargeAddress+6, values[6:7]); err != nil {
+			return fmt.Errorf("write OnTimeChargeEn: %w", err)
+		}
+	}
+	for offset := 0; offset < 6; offset++ {
+		if err := m.writer.WriteHoldingWords(timedChargeAddress+uint16(offset), values[offset:offset+1]); err != nil {
+			return fmt.Errorf("write timed charge slot register 0x%04X: %w", timedChargeAddress+uint16(offset), err)
+		}
+	}
+	if values[6] != 0 {
+		if err := m.writer.WriteHoldingWords(timedChargeAddress+6, values[6:7]); err != nil {
+			return fmt.Errorf("write OnTimeChargeEn: %w", err)
+		}
+	}
+	return nil
+}
+
 func finalPhaseForReason(reason string) string {
 	switch reason {
 	case "target_reached":
@@ -449,7 +483,7 @@ func finalPhaseForReason(reason string) string {
 	}
 }
 
-func previousSettings(snapshot state.Snapshot) (PreviousSettings, error) {
+func (m *Manager) previousSettings(snapshot state.Snapshot) (PreviousSettings, error) {
 	cutoff, err := requiredNumeric(snapshot, "battery_charge_cutoff_soc")
 	if err != nil {
 		return PreviousSettings{}, err
@@ -458,19 +492,14 @@ func previousSettings(snapshot state.Snapshot) (PreviousSettings, error) {
 	if err != nil {
 		return PreviousSettings{}, err
 	}
-	charger, err := requiredRaw(snapshot, "charger_source_priority")
+	schedule, err := m.writer.ReadHoldingWords(timedChargeAddress, timedChargeWords)
 	if err != nil {
-		return PreviousSettings{}, err
-	}
-	output, err := requiredRaw(snapshot, "output_source_priority")
-	if err != nil {
-		return PreviousSettings{}, err
+		return PreviousSettings{}, fmt.Errorf("read timed utility charging settings: %w", err)
 	}
 	return PreviousSettings{
 		BatteryChargeCutoffSOC: int(cutoff),
 		MainsChargeCurrentA:    current,
-		ChargerSourcePriority:  charger,
-		OutputSourcePriority:   output,
+		TimedChargeSchedule:    schedule,
 	}, nil
 }
 
@@ -499,8 +528,6 @@ func hasRequiredTelemetry(snapshot state.Snapshot) bool {
 		"battery_soc",
 		"battery_charge_cutoff_soc",
 		"mains_charge_current_limit",
-		"charger_source_priority",
-		"output_source_priority",
 		"grid_voltage_phase_a",
 		"grid_voltage_phase_b",
 		"grid_voltage_phase_c",
@@ -558,15 +585,6 @@ func optionalNumeric(snapshot state.Snapshot, id string) (float64, bool) {
 	return 0, false
 }
 
-func requiredRaw(snapshot state.Snapshot, id string) (int64, error) {
-	for _, value := range snapshot.Telemetry {
-		if value.ID == id {
-			return value.Raw, nil
-		}
-	}
-	return 0, fmt.Errorf("telemetry %s is not available", id)
-}
-
 func (m *Manager) load() error {
 	data, err := os.ReadFile(m.statePath)
 	if errors.Is(err, os.ErrNotExist) {
@@ -578,7 +596,10 @@ func (m *Manager) load() error {
 	if err := yaml.Unmarshal(data, &m.runtime); err != nil {
 		return fmt.Errorf("parse storm charge runtime state: %w", err)
 	}
-	if m.runtime.Version != 1 {
+	if m.runtime.Version == 1 && !m.runtime.Active {
+		m.runtime.Version = 2
+	}
+	if m.runtime.Version != 2 {
 		return fmt.Errorf("unsupported storm charge runtime state version %d", m.runtime.Version)
 	}
 	if m.runtime.Phase == "" {

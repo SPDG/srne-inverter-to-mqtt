@@ -13,7 +13,7 @@ Linux-first single-binary bridge for polling SRNE inverters over Modbus RTU or T
 - model-aware single-phase, SPI H3P, and HESP SH3 inverter profiles,
 - Home Assistant MQTT Discovery for telemetry and writable controls,
 - managed storm charging with target SOC, current limit, timeout, rollback, and manual cancellation,
-- built-in control panel with live telemetry, safe writes, and serial port discovery,
+- built-in control panel with live telemetry, safe writes, inverter clock setting, and serial port discovery,
 - GitHub Actions workflows for CI and tagged releases on Linux.
 
 ## Screenshots
@@ -71,13 +71,17 @@ Select the hardware profile explicitly:
 The legacy `three_phase` value is accepted as an alias for `spi_h3p`.
 
 Storm charge defaults are configured under `storm_charge`. An active session
-temporarily switches the SPI H3P to utility output and requests utility-priority
-charging, then restores the exact previous inverter settings after reaching the
-target SOC, timing out, losing the grid, encountering a fault, or being
-cancelled manually. If the inverter firmware rejects utility-priority charging,
-startup fails and the captured settings are restored. Crash recovery data is
-written automatically next to the main config as
+temporarily enables the SPI H3P timed utility-charging function, applies the
+selected battery-side current limit and target SOC, then restores the exact
+previous schedule and settings after reaching the target, timing out, losing
+the grid, encountering a fault, or being cancelled manually. Crash recovery
+data is written automatically next to the main config as
 `<config>.storm-charge-state.yaml`.
+
+The Controls view can read and set the inverter's local wall clock. The panel
+uses the browser's local date and time rather than the server timezone, and a
+write is always explicit. A correct inverter clock is required for daily
+counters and the built-in timed charging schedule.
 
 The probe command uses the same transports, for example:
 
@@ -103,6 +107,8 @@ Hardware-specific operating notes and the source manuals are available in
 - `PUT /api/v1/storm-charge/settings`
 - `POST /api/v1/storm-charge/start`
 - `POST /api/v1/storm-charge/cancel`
+- `GET /api/v1/inverter/clock`
+- `POST /api/v1/inverter/clock`
 
 `/api/v1/status` returns runtime service state and the latest telemetry snapshot used by both the web panel and MQTT publishing.
 

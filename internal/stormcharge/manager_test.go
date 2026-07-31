@@ -1,7 +1,9 @@
 package stormcharge
 
 import (
+	"fmt"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"sync"
 	"testing"
@@ -18,10 +20,32 @@ type recordedWrite struct {
 }
 
 type recordingWriter struct {
-	mu       sync.Mutex
-	writes   []recordedWrite
-	failID   string
-	failures int
+	mu        sync.Mutex
+	writes    []recordedWrite
+	failID    string
+	failures  int
+	readWords []uint16
+}
+
+func (w *recordingWriter) ReadHoldingWords(address, count uint16) ([]uint16, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if len(w.readWords) == 0 {
+		return make([]uint16, count), nil
+	}
+	return append([]uint16(nil), w.readWords...), nil
+}
+
+func (w *recordingWriter) WriteHoldingWords(address uint16, values []uint16) error {
+	id := fmt.Sprintf("0x%04X", address)
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.writes = append(w.writes, recordedWrite{id: id, value: append([]uint16(nil), values...)})
+	if id == w.failID && w.failures > 0 {
+		w.failures--
+		return errTestWrite
+	}
+	return nil
 }
 
 func (w *recordingWriter) WriteRegister(id string, value any) error {
@@ -45,14 +69,14 @@ func TestStartAndCancelRestoresPreviousSettings(t *testing.T) {
 	t.Parallel()
 
 	runtimeState := readyState()
-	writer := &recordingWriter{}
+	previousSchedule := []uint16{0x0600, 0x0800, 0x1200, 0x1400, 0, 0, 0}
+	writer := &recordingWriter{readWords: previousSchedule}
 	manager, err := New(filepath.Join(t.TempDir(), "runtime.yaml"), writer, runtimeState)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
 	now := time.Date(2026, time.July, 31, 12, 0, 0, 0, time.UTC)
 	manager.now = func() time.Time { return now }
-	manager.sleep = func(time.Duration) {}
 
 	settings := testSettings()
 	if err := manager.Start(settings); err != nil {
@@ -75,27 +99,38 @@ func TestStartAndCancelRestoresPreviousSettings(t *testing.T) {
 	assertWriteIDs(t, writer.writes, []string{
 		"battery_charge_cutoff_soc",
 		"mains_charge_current_limit",
-		"output_source_priority",
-		"charger_source_priority",
-		"charger_source_priority",
-		"output_source_priority",
+		"0xE026",
+		"0xE027",
+		"0xE028",
+		"0xE029",
+		"0xE02A",
+		"0xE02B",
+		"0xE02C",
+		"0xE02C",
+		"0xE026",
+		"0xE027",
+		"0xE028",
+		"0xE029",
+		"0xE02A",
+		"0xE02B",
 		"mains_charge_current_limit",
 		"battery_charge_cutoff_soc",
 	})
-	if got := writer.writes[4].value; got != int64(3) {
-		t.Fatalf("restored charger source = %#v, want raw 3", got)
-	}
-	if got := writer.writes[3].value; got != int64(1) {
-		t.Fatalf("storm charger source = %#v, want Utility Priority raw 1", got)
-	}
-	if got := writer.writes[5].value; got != int64(2) {
-		t.Fatalf("restored output source = %#v, want raw 2", got)
-	}
-	if got := writer.writes[6].value; got != float64(10) {
+	if got := writer.writes[16].value; got != float64(10) {
 		t.Fatalf("restored mains current = %#v, want 10", got)
 	}
-	if got := writer.writes[7].value; got != 100 {
+	if got := writer.writes[17].value; got != 100 {
 		t.Fatalf("restored charge cutoff = %#v, want 100", got)
+	}
+	for index, want := range []uint16{1, 0x173B, 1, 0x173B, 1, 0x173B, 1} {
+		if got := writer.writes[index+2].value; !reflect.DeepEqual(got, []uint16{want}) {
+			t.Fatalf("storm schedule word %d = %#v, want %d", index, got, want)
+		}
+	}
+	for index, want := range previousSchedule[:6] {
+		if got := writer.writes[index+10].value; !reflect.DeepEqual(got, []uint16{want}) {
+			t.Fatalf("restored schedule word %d = %#v, want %d", index, got, want)
+		}
 	}
 }
 
@@ -109,7 +144,6 @@ func TestTargetReachedCompletesAndRestores(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 	manager.now = func() time.Time { return time.Date(2026, time.July, 31, 12, 0, 0, 0, time.UTC) }
-	manager.sleep = func(time.Duration) {}
 	settings := testSettings()
 	if err := manager.Start(settings); err != nil {
 		t.Fatalf("Start() error = %v", err)
@@ -134,7 +168,6 @@ func TestTimeoutRestoresPreviousSettings(t *testing.T) {
 	}
 	now := time.Date(2026, time.July, 31, 12, 0, 0, 0, time.UTC)
 	manager.now = func() time.Time { return now }
-	manager.sleep = func(time.Duration) {}
 	settings := testSettings()
 	if err := manager.Start(settings); err != nil {
 		t.Fatalf("Start() error = %v", err)
@@ -146,8 +179,8 @@ func TestTimeoutRestoresPreviousSettings(t *testing.T) {
 	if status.Active || status.Phase != PhaseTimedOut || status.Reason != "timeout" {
 		t.Fatalf("timed out status = %#v", status)
 	}
-	if got := len(writer.writes); got != 8 {
-		t.Fatalf("write count = %d, want 8", got)
+	if got := len(writer.writes); got != 18 {
+		t.Fatalf("write count = %d, want 18", got)
 	}
 }
 
@@ -155,13 +188,12 @@ func TestStartFailureRollsBackAppliedSettings(t *testing.T) {
 	t.Parallel()
 
 	runtimeState := readyState()
-	writer := &recordingWriter{failID: "charger_source_priority", failures: 1}
+	writer := &recordingWriter{failID: "0xE026", failures: 1}
 	manager, err := New(filepath.Join(t.TempDir(), "runtime.yaml"), writer, runtimeState)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
 	manager.now = func() time.Time { return time.Date(2026, time.July, 31, 12, 0, 0, 0, time.UTC) }
-	manager.sleep = func(time.Duration) {}
 
 	if err := manager.Start(testSettings()); err == nil {
 		t.Fatal("Start() expected error")
@@ -170,7 +202,7 @@ func TestStartFailureRollsBackAppliedSettings(t *testing.T) {
 	if status.Active || status.Phase != PhaseError {
 		t.Fatalf("failed start status = %#v", status)
 	}
-	if len(writer.writes) < 7 {
+	if len(writer.writes) < 12 {
 		t.Fatalf("write count = %d, expected start writes plus rollback", len(writer.writes))
 	}
 }
@@ -187,7 +219,6 @@ func TestActiveSessionIsReappliedAfterRestart(t *testing.T) {
 	}
 	now := time.Date(2026, time.July, 31, 12, 0, 0, 0, time.UTC)
 	first.now = func() time.Time { return now }
-	first.sleep = func(time.Duration) {}
 	if err := first.Start(testSettings()); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
@@ -198,11 +229,10 @@ func TestActiveSessionIsReappliedAfterRestart(t *testing.T) {
 		t.Fatalf("second New() error = %v", err)
 	}
 	second.now = func() time.Time { return now.Add(time.Minute) }
-	second.sleep = func(time.Duration) {}
 	second.evaluate()
 
-	if len(secondWriter.writes) != 4 {
-		t.Fatalf("recovery write count = %d, want 4", len(secondWriter.writes))
+	if len(secondWriter.writes) != 9 {
+		t.Fatalf("recovery write count = %d, want 9", len(secondWriter.writes))
 	}
 	if status := second.Status(testSettings()); !status.Active || status.Phase != PhaseCharging {
 		t.Fatalf("recovered status = %#v", status)
@@ -220,7 +250,6 @@ func TestRestartWaitsForInitialModbusConnection(t *testing.T) {
 	}
 	now := time.Date(2026, time.July, 31, 12, 0, 0, 0, time.UTC)
 	first.now = func() time.Time { return now }
-	first.sleep = func(time.Duration) {}
 	if err := first.Start(testSettings()); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
@@ -232,7 +261,6 @@ func TestRestartWaitsForInitialModbusConnection(t *testing.T) {
 		t.Fatalf("second New() error = %v", err)
 	}
 	second.now = func() time.Time { return now.Add(time.Minute) }
-	second.sleep = func(time.Duration) {}
 	second.evaluate()
 	if got := len(secondWriter.writes); got != 0 {
 		t.Fatalf("writes before initial Modbus connection = %d, want 0", got)
@@ -243,8 +271,8 @@ func TestRestartWaitsForInitialModbusConnection(t *testing.T) {
 
 	runtimeState.SetServiceStatus("modbus", "connected", true, "", time.Now().UTC())
 	second.evaluate()
-	if got := len(secondWriter.writes); got != 4 {
-		t.Fatalf("writes after initial Modbus connection = %d, want 4", got)
+	if got := len(secondWriter.writes); got != 9 {
+		t.Fatalf("writes after initial Modbus connection = %d, want 9", got)
 	}
 	if status := second.Status(testSettings()); !status.Active || status.Phase != PhaseCharging {
 		t.Fatalf("resumed status = %#v", status)
@@ -260,7 +288,6 @@ func TestStartRejectsUnavailableGrid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	manager.sleep = func(time.Duration) {}
 	if err := manager.Start(testSettings()); err == nil {
 		t.Fatal("Start() expected grid validation error")
 	}
@@ -276,7 +303,6 @@ func TestRestoreWaitsUntilModbusReconnects(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 	manager.now = func() time.Time { return time.Date(2026, time.July, 31, 12, 0, 0, 0, time.UTC) }
-	manager.sleep = func(time.Duration) {}
 	if err := manager.Start(testSettings()); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
@@ -284,8 +310,8 @@ func TestRestoreWaitsUntilModbusReconnects(t *testing.T) {
 	runtimeState.SetServiceStatus("modbus", "error", false, "disconnected", time.Time{})
 	manager.evaluate()
 	manager.evaluate()
-	if got := len(writer.writes); got != 4 {
-		t.Fatalf("writes while Modbus disconnected = %d, want 4 initial writes", got)
+	if got := len(writer.writes); got != 9 {
+		t.Fatalf("writes while Modbus disconnected = %d, want 9 initial writes", got)
 	}
 	if status := manager.Status(testSettings()); !status.Active || status.Phase != PhaseRestoring {
 		t.Fatalf("disconnected status = %#v", status)
@@ -293,8 +319,8 @@ func TestRestoreWaitsUntilModbusReconnects(t *testing.T) {
 
 	runtimeState.SetServiceStatus("modbus", "connected", true, "", time.Now().UTC())
 	manager.evaluate()
-	if got := len(writer.writes); got != 8 {
-		t.Fatalf("writes after Modbus reconnect = %d, want 8", got)
+	if got := len(writer.writes); got != 18 {
+		t.Fatalf("writes after Modbus reconnect = %d, want 18", got)
 	}
 	if status := manager.Status(testSettings()); status.Active || status.Phase != PhaseError || status.Reason != "modbus_lost" {
 		t.Fatalf("restored status = %#v", status)

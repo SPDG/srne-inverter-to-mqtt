@@ -38,6 +38,12 @@ const els = {
   stormChargeStart: document.getElementById("storm-charge-start"),
   stormChargeCancel: document.getElementById("storm-charge-cancel"),
   stormChargeResult: document.getElementById("storm-charge-result"),
+  inverterClockForm: document.getElementById("inverter-clock-form"),
+  inverterClockInput: document.getElementById("inverter-clock-input"),
+  inverterClockReading: document.getElementById("inverter-clock-reading"),
+  inverterClockResult: document.getElementById("inverter-clock-result"),
+  refreshInverterClock: document.getElementById("refresh-inverter-clock"),
+  useBrowserClock: document.getElementById("use-browser-clock"),
   haYaml: document.getElementById("ha-yaml"),
   settingsRuntime: document.getElementById("settings-runtime"),
   serialPorts: document.getElementById("serial-ports"),
@@ -91,6 +97,43 @@ async function loadPorts() {
 async function loadConfig() {
   const cfg = await fetchJSON("/api/v1/config");
   fillConfigForm(cfg);
+}
+
+async function loadInverterClock() {
+  els.inverterClockReading.textContent = "Reading...";
+  try {
+    const value = await fetchJSON("/api/v1/inverter/clock");
+    els.inverterClockReading.textContent = value.formatted;
+    els.inverterClockReading.classList.toggle("invalid", !value.valid);
+  } catch (error) {
+    els.inverterClockReading.textContent = error.message;
+    els.inverterClockReading.classList.add("invalid");
+  }
+}
+
+function localDateTimeInputValue(value = new Date()) {
+  const pad = (part) => String(part).padStart(2, "0");
+  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}:${pad(value.getSeconds())}`;
+}
+
+async function setInverterClock(event) {
+  event.preventDefault();
+  const dateTime = els.inverterClockInput.value;
+  if (!dateTime) {
+    return;
+  }
+  els.inverterClockResult.textContent = "Writing and verifying clock...";
+  try {
+    const value = await fetchJSON("/api/v1/inverter/clock", {
+      method: "POST",
+      body: JSON.stringify({ dateTime }),
+    });
+    els.inverterClockReading.textContent = value.formatted;
+    els.inverterClockReading.classList.toggle("invalid", !value.valid);
+    els.inverterClockResult.textContent = "Inverter clock updated.";
+  } catch (error) {
+    els.inverterClockResult.textContent = error.message;
+  }
 }
 
 function renderStatus(status, { forceControls = false } = {}) {
@@ -1019,10 +1062,16 @@ async function bootstrap() {
   els.stormChargeForm?.addEventListener("submit", startStormCharge);
   els.stormChargeCancel?.addEventListener("click", cancelStormCharge);
   els.stormMaxCurrent?.addEventListener("input", updateStormPowerPreview);
+  els.inverterClockForm?.addEventListener("submit", setInverterClock);
+  els.refreshInverterClock?.addEventListener("click", loadInverterClock);
+  els.useBrowserClock?.addEventListener("click", () => {
+    els.inverterClockInput.value = localDateTimeInputValue();
+  });
   startAutoRefresh();
 
   try {
-    await Promise.all([loadStatus(), loadPorts(), loadConfig()]);
+    els.inverterClockInput.value = localDateTimeInputValue();
+    await Promise.all([loadStatus(), loadPorts(), loadConfig(), loadInverterClock()]);
   } catch (error) {
     els.summary.textContent = error.message;
     els.saveResult.textContent = error.message;

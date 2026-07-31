@@ -11,6 +11,7 @@ import (
 
 	"github.com/tomasz/srne-inverter-to-mqtt/internal/buildinfo"
 	"github.com/tomasz/srne-inverter-to-mqtt/internal/config"
+	"github.com/tomasz/srne-inverter-to-mqtt/internal/inverterclock"
 	"github.com/tomasz/srne-inverter-to-mqtt/internal/registers"
 	"github.com/tomasz/srne-inverter-to-mqtt/internal/serialdetect"
 	"github.com/tomasz/srne-inverter-to-mqtt/internal/state"
@@ -37,6 +38,11 @@ type StormChargeController interface {
 	CancelStormCharge() error
 }
 
+type InverterClockController interface {
+	GetInverterClock() (inverterclock.DateTime, error)
+	SetInverterClock(inverterclock.DateTime) (inverterclock.DateTime, error)
+}
+
 type StatusSnapshot struct {
 	StartedAt   time.Time `json:"startedAt"`
 	ConfigPath  string    `json:"configPath"`
@@ -50,10 +56,11 @@ type Handler struct {
 	status StatusProvider
 	writer RegisterWriter
 	storm  StormChargeController
+	clock  InverterClockController
 	assets fs.FS
 }
 
-func NewHandler(build buildinfo.Info, state StatusSnapshot, store ConfigStore, status StatusProvider, writer RegisterWriter, storm StormChargeController, assets fs.FS) *Handler {
+func NewHandler(build buildinfo.Info, state StatusSnapshot, store ConfigStore, status StatusProvider, writer RegisterWriter, storm StormChargeController, clock InverterClockController, assets fs.FS) *Handler {
 	return &Handler{
 		build:  build,
 		state:  state,
@@ -61,6 +68,7 @@ func NewHandler(build buildinfo.Info, state StatusSnapshot, store ConfigStore, s
 		status: status,
 		writer: writer,
 		storm:  storm,
+		clock:  clock,
 		assets: assets,
 	}
 }
@@ -77,8 +85,41 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("PUT /api/v1/storm-charge/settings", h.handleUpdateStormChargeSettings)
 	mux.HandleFunc("POST /api/v1/storm-charge/start", h.handleStartStormCharge)
 	mux.HandleFunc("POST /api/v1/storm-charge/cancel", h.handleCancelStormCharge)
+	mux.HandleFunc("GET /api/v1/inverter/clock", h.handleGetInverterClock)
+	mux.HandleFunc("POST /api/v1/inverter/clock", h.handleSetInverterClock)
 	mux.Handle("/", h.serveSPA())
 	return h.withCommonHeaders(mux)
+}
+
+func (h *Handler) handleGetInverterClock(w http.ResponseWriter, _ *http.Request) {
+	value, err := h.clock.GetInverterClock()
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, value)
+}
+
+func (h *Handler) handleSetInverterClock(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	var payload struct {
+		DateTime string `json:"dateTime"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON payload")
+		return
+	}
+	value, err := inverterclock.ParseLocal(strings.TrimSpace(payload.DateTime))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	written, err := h.clock.SetInverterClock(value)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, written)
 }
 
 func (h *Handler) handleHealth(w http.ResponseWriter, _ *http.Request) {

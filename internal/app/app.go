@@ -15,6 +15,7 @@ import (
 	"github.com/tomasz/srne-inverter-to-mqtt/internal/buildinfo"
 	"github.com/tomasz/srne-inverter-to-mqtt/internal/config"
 	"github.com/tomasz/srne-inverter-to-mqtt/internal/httpapi"
+	"github.com/tomasz/srne-inverter-to-mqtt/internal/inverterclock"
 	modbussvc "github.com/tomasz/srne-inverter-to-mqtt/internal/modbus"
 	mqttsvc "github.com/tomasz/srne-inverter-to-mqtt/internal/mqtt"
 	"github.com/tomasz/srne-inverter-to-mqtt/internal/state"
@@ -33,6 +34,7 @@ type App struct {
 	runtimeState *state.Store
 	modbus       *modbussvc.Service
 	stormCharge  *stormcharge.Manager
+	clock        *inverterclock.Service
 	exit         func(int)
 }
 
@@ -80,6 +82,7 @@ func (a *App) Run(ctx context.Context) error {
 
 	a.modbus = modbusService
 	a.stormCharge = stormChargeManager
+	a.clock = inverterclock.New(modbusService)
 
 	mqttService := mqttsvc.NewService(a, a.runtimeState, a.build)
 
@@ -90,6 +93,7 @@ func (a *App) Run(ctx context.Context) error {
 			ConfigPath:  a.configPath,
 			ConfigReady: true,
 		},
+		a,
 		a,
 		a,
 		a,
@@ -295,4 +299,21 @@ func (a *App) CancelStormCharge() error {
 		return fmt.Errorf("storm charge manager is not initialized")
 	}
 	return a.stormCharge.Cancel()
+}
+
+func (a *App) GetInverterClock() (inverterclock.DateTime, error) {
+	if a.clock == nil {
+		return inverterclock.DateTime{}, fmt.Errorf("inverter clock service is not initialized")
+	}
+	return a.clock.Read()
+}
+
+func (a *App) SetInverterClock(value inverterclock.DateTime) (inverterclock.DateTime, error) {
+	if a.clock == nil {
+		return inverterclock.DateTime{}, fmt.Errorf("inverter clock service is not initialized")
+	}
+	if a.stormCharge != nil && a.stormCharge.IsActive() {
+		return inverterclock.DateTime{}, fmt.Errorf("inverter clock cannot be changed while storm charge is active")
+	}
+	return a.clock.Set(value)
 }

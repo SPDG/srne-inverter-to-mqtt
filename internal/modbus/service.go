@@ -147,6 +147,98 @@ func (s *Service) WriteRegister(id string, value any) error {
 	return nil
 }
 
+// ReadHoldingWords performs a serialized, retrying read for protocol features
+// that span multiple registers and do not belong in the telemetry catalog.
+func (s *Service) ReadHoldingWords(address, count uint16) ([]uint16, error) {
+	if count == 0 {
+		return nil, fmt.Errorf("holding register count must be greater than zero")
+	}
+
+	cfg := s.provider.GetConfig()
+	if strings.TrimSpace(cfg.Serial.Port) == "" {
+		return nil, fmt.Errorf("serial port is empty")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	client, err := s.ensureClientLocked(cfg)
+	if err != nil {
+		s.state.SetServiceStatus("modbus", "error", false, err.Error(), time.Time{})
+		return nil, err
+	}
+	payload, err := s.readHoldingWithRetryLocked(client, cfg, address, count)
+	if err != nil {
+		s.state.SetServiceStatus("modbus", "error", false, err.Error(), time.Time{})
+		return nil, fmt.Errorf("read 0x%04X/%d: %w", address, count, err)
+	}
+	words, err := registers.WordsFromBytes(payload, count)
+	if err != nil {
+		return nil, fmt.Errorf("decode 0x%04X/%d: %w", address, count, err)
+	}
+	s.state.SetServiceStatus("modbus", "connected", true, "", time.Now().UTC())
+	return append([]uint16(nil), words[:count]...), nil
+}
+
+// WriteHoldingWords writes one or more contiguous registers and verifies the
+// result. Callers must use fixed protocol addresses and validate values first.
+func (s *Service) WriteHoldingWords(address uint16, values []uint16) error {
+	if len(values) == 0 || len(values) > int(^uint16(0)) {
+		return fmt.Errorf("holding register values must contain between 1 and 65535 words")
+	}
+
+	cfg := s.provider.GetConfig()
+	if strings.TrimSpace(cfg.Serial.Port) == "" {
+		return fmt.Errorf("serial port is empty")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	client, err := s.ensureClientLocked(cfg)
+	if err != nil {
+		s.state.SetServiceStatus("modbus", "error", false, err.Error(), time.Time{})
+		return err
+	}
+
+	log.Printf("modbus block write requested address=0x%04X count=%d raw=%v", address, len(values), values)
+	s.unlockBeforeWriteLocked(client)
+	if len(values) == 1 {
+		_, err = client.WriteSingleRegister(address, values[0])
+	} else {
+		payload := make([]byte, len(values)*2)
+		for index, value := range values {
+			payload[index*2] = byte(value >> 8)
+			payload[index*2+1] = byte(value)
+		}
+		_, err = client.WriteMultipleRegisters(address, uint16(len(values)), payload)
+	}
+	if err != nil {
+		s.state.SetServiceStatus("modbus", "error", false, err.Error(), time.Time{})
+		return fmt.Errorf("write 0x%04X/%d: %w", address, len(values), err)
+	}
+
+	time.Sleep(150 * time.Millisecond)
+	payload, err := s.readHoldingWithRetryLocked(client, cfg, address, uint16(len(values)))
+	if err != nil {
+		return fmt.Errorf("write 0x%04X/%d readback: %w", address, len(values), err)
+	}
+	readback, err := registers.WordsFromBytes(payload, uint16(len(values)))
+	if err != nil {
+		return fmt.Errorf("write 0x%04X/%d readback decode: %w", address, len(values), err)
+	}
+	for index, expected := range values {
+		if readback[index] != expected {
+			return fmt.Errorf("write 0x%04X readback mismatch at offset %d: wrote %d, read %d", address, index, expected, readback[index])
+		}
+	}
+
+	now := time.Now().UTC()
+	s.state.SetServiceStatus("modbus", "connected", true, "", now)
+	log.Printf("modbus block write confirmed address=0x%04X count=%d", address, len(values))
+	return nil
+}
+
 const batterySOCThresholdGap uint16 = 5
 
 func (s *Service) validateWriteLocked(cfg config.Config, reg registers.Register, encoded uint16) error {

@@ -81,24 +81,23 @@ On start, the service persists and then temporarily changes:
 
 1. battery charge cut-off SOC to the selected target,
 2. mains charge current limit to the selected maximum,
-3. output source priority to `Utility` (`UTI`),
-4. charger source priority to `Utility Priority` (`CUb`).
+3. all three timed utility-charge slots to `00:01-23:59`,
+4. timed utility charging to enabled.
 
-The service waits briefly after entering utility bypass before changing charger
-priority. If any write is rejected, startup fails and all captured settings are
+The entire seven-word timed-charge schedule is captured before the first
+change. If any write is rejected, startup fails and all captured settings are
 restored.
 
-Moving AC OUT to utility bypass is required for mains charging on SPI H3P, but
-it is not sufficient by itself. The manual notes that utility charging can only
-start while utility bypass is loaded; while inverter output is active, only PV
-charging may start.
+The manual states that enabling timed utility charging changes the power-supply
+mode during the configured period. This is the documented mechanism intended
+to move AC OUT to utility bypass and permit utility battery charging together.
 
 The previous values are restored after the target SOC is reached, on manual
 cancellation, after the configured timeout, after grid loss, or when a fault is
 reported. An active session survives process restarts through the automatic
-`<config>.storm-charge-state.yaml` recovery file. Manual writes to the four
-managed registers and service configuration changes are rejected while the
-session is active.
+`<config>.storm-charge-state.yaml` recovery file. Manual writes to the target
+SOC and mains-current registers and service configuration changes are rejected
+while the session is active.
 
 The selected current is a battery-side limit. The UI estimates power as current
 multiplied by the live battery voltage; actual power remains subject to PV/load
@@ -114,13 +113,44 @@ limitations:
   With 463 W PV, 477 W grid input, and 999 W load, the battery was still
   discharging instead of charging toward the selected target.
 
-The application therefore uses the semantically correct `CUb` request and
-fails safely on this firmware instead of reporting a non-charging `Hybrid`
-session as successful. Every test restored the captured values: 100% charge
-cut-off, 10 A mains limit, `PV Only`, and `Solar, Battery, Utility` output
-priority. The time-slot utility-charging function described by parameters
-40-46 may provide an alternative, but its Modbus register mapping has not yet
-been identified or validated.
+Modbus protocol V1.96 identifies the alternative function as parameters 40-46:
+
+| Register | Name | Encoding |
+| --- | --- | --- |
+| `0xE026` / `0xE027` | Utility charge slot 1 start / end | hour in high byte, minute in low byte |
+| `0xE028` / `0xE029` | Utility charge slot 2 start / end | hour in high byte, minute in low byte |
+| `0xE02A` / `0xE02B` | Utility charge slot 3 start / end | hour in high byte, minute in low byte |
+| `0xE02C` | Timed utility charging | `0` disabled, `1` enabled |
+
+Live reads on `srne-002` confirmed that this seven-register block is present;
+all values were initially zero. A live write also established that the firmware
+normalizes a `00:00` start to `00:01` and validates all three slot pairs when
+the function is enabled. Storm Charge now uses this function instead of
+changing output or charger source priority.
+
+The completed live test on 2026-07-31 used an 80% target, 10 A utility limit,
+and five-minute timeout. Before activation, battery current was `+14.4 A`
+(discharging). After the timed function was enabled, it changed to `-16.4 A`
+(charging), with approximately 1.49 kW imported from utility, 227 W from PV,
+and 984 W consumed by the load. Manual cancellation restored the original
+seven zero words; a direct Modbus read after cancellation confirmed
+`0xE026-0xE02C = [0, 0, 0, 0, 0, 0, 0]`.
+
+## Inverter Clock
+
+The inverter RTC is stored as three contiguous read/write registers:
+
+| Register | High byte | Low byte |
+| --- | --- | --- |
+| `0x020C` | year since 2000 | month |
+| `0x020D` | day | hour |
+| `0x020E` | minute | second |
+
+The Controls view reads these registers on demand and can write a local wall
+clock supplied by the browser. The service does not synchronize it
+automatically, because the host timezone may differ from the inverter's local
+timezone. The original live value was invalid (`2022-13-14 22:25:52`), which
+confirmed that the factory RTC had not been configured correctly.
 
 ## Validated Low-SOC Incident
 

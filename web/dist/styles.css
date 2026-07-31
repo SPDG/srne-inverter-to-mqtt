@@ -483,6 +483,33 @@ select {
   padding-top: 3px;
 }
 
+.clock-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(260px, 1fr) auto;
+  align-items: end;
+  gap: 18px;
+}
+
+.clock-form label,
+.clock-reading {
+  display: grid;
+  gap: 8px;
+}
+
+.clock-reading strong {
+  font-family: var(--font-display);
+  font-size: clamp(1.2rem, 2vw, 1.75rem);
+}
+
+.clock-reading strong.invalid {
+  color: var(--danger);
+}
+
+.clock-actions {
+  display: flex;
+  gap: 10px;
+}
+
 .action-button.storm-start {
   border-color: #1c8ad7;
   background: #0d3554;
@@ -1022,7 +1049,8 @@ code {
 @media (max-width: 1080px) {
   .hero-grid,
   .settings-grid,
-  .storm-charge-layout {
+  .storm-charge-layout,
+  .clock-form {
     grid-template-columns: 1fr;
   }
 
