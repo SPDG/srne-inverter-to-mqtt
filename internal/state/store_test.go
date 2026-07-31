@@ -21,8 +21,8 @@ func TestSnapshotIncludesDerivedEnergyMetrics(t *testing.T) {
 			Component: "sensor",
 			Entity:    "diagnostic",
 			Unit:      "kWh",
-			Value:     3653.6,
-			Rendered:  "3653.6",
+			Value:     200.0,
+			Rendered:  "200.0",
 			UpdatedAt: now,
 		},
 		{
@@ -32,8 +32,30 @@ func TestSnapshotIncludesDerivedEnergyMetrics(t *testing.T) {
 			Component: "sensor",
 			Entity:    "diagnostic",
 			Unit:      "kWh",
-			Value:     3027.4,
-			Rendered:  "3027.4",
+			Value:     850.0,
+			Rendered:  "850.0",
+			UpdatedAt: now,
+		},
+		{
+			ID:        "total_production",
+			Address:   0xF034,
+			Group:     registers.GroupSlow,
+			Component: "sensor",
+			Entity:    "diagnostic",
+			Unit:      "kWh",
+			Value:     800.0,
+			Rendered:  "800.0",
+			UpdatedAt: now,
+		},
+		{
+			ID:        "total_energy_export",
+			Address:   0xF032,
+			Group:     registers.GroupSlow,
+			Component: "sensor",
+			Entity:    "diagnostic",
+			Unit:      "kWh",
+			Value:     50.0,
+			Rendered:  "50.0",
 			UpdatedAt: now,
 		},
 	})
@@ -49,22 +71,31 @@ func TestSnapshotIncludesDerivedEnergyMetrics(t *testing.T) {
 	if !ok {
 		t.Fatal("system_energy_losses_total not found")
 	}
-	if got, ok := losses.Value.(float64); !ok || got != 626.2 {
+	if got, ok := losses.Value.(float64); !ok || got != 100.0 {
 		t.Fatalf("unexpected losses value: %#v", losses.Value)
 	}
-	if losses.Rendered != "626.2" {
+	if losses.Rendered != "100.0" {
 		t.Fatalf("unexpected losses rendered value: %q", losses.Rendered)
+	}
+	if !losses.Synthetic {
+		t.Fatal("system_energy_losses_total should be marked synthetic")
 	}
 
 	efficiency, ok := values["system_energy_efficiency_total"]
 	if !ok {
 		t.Fatal("system_energy_efficiency_total not found")
 	}
-	if got, ok := efficiency.Value.(float64); !ok || got != 82.9 {
+	if got, ok := efficiency.Value.(float64); !ok || got != 90.0 {
 		t.Fatalf("unexpected efficiency value: %#v", efficiency.Value)
 	}
-	if efficiency.Rendered != "82.9" {
+	if efficiency.Rendered != "90.0" {
 		t.Fatalf("unexpected efficiency rendered value: %q", efficiency.Rendered)
+	}
+	if !efficiency.Synthetic {
+		t.Fatal("system_energy_efficiency_total should be marked synthetic")
+	}
+	if values["total_energy_import"].Synthetic {
+		t.Fatal("physical Modbus telemetry should not be marked synthetic")
 	}
 }
 

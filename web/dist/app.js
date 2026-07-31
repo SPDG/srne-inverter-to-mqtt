@@ -186,28 +186,41 @@ function renderRawData(items) {
 
   if (!filtered.length) {
     const message = rawDataItems.length ? "No parameters match this search." : "Waiting for Modbus data.";
-    els.rawDataBody.innerHTML = `<tr><td colspan="9" class="raw-empty">${escapeHTML(message)}</td></tr>`;
+    els.rawDataBody.innerHTML = `<tr><td colspan="10" class="raw-empty">${escapeHTML(message)}</td></tr>`;
     return;
   }
 
   els.rawDataBody.innerHTML = filtered.map((item) => {
-    const address = `0x${Number(item.address).toString(16).padStart(4, "0").toUpperCase()}`;
+    const address = item.synthetic ? "-" : `0x${Number(item.address).toString(16).padStart(4, "0").toUpperCase()}`;
+    const source = item.synthetic ? "Computed" : item.writeOnly ? "Control" : "Modbus";
+    const sourceClass = `raw-source ${source.toLowerCase()}`;
     const access = item.writeOnly ? "Write only" : item.writable ? "Read / Write" : "Read only";
     const accessClass = item.writable ? "raw-access writable" : "raw-access";
     return `
       <tr>
-        <td><code class="raw-address">${address}</code></td>
+        <td><code class="raw-address">${escapeHTML(address)}</code></td>
         <td class="raw-name">${escapeHTML(item.name)}</td>
         <td><code>${escapeHTML(item.id)}</code></td>
         <td class="raw-value">${escapeHTML(String(item.rendered ?? "-"))}</td>
-        <td><code>${escapeHTML(String(item.raw ?? "-"))}</code></td>
+        <td><code>${escapeHTML(rawValueText(item))}</code></td>
         <td>${escapeHTML(item.unit || "-")}</td>
         <td><span class="raw-group">${escapeHTML(item.group || "-")}</span></td>
+        <td><span class="${sourceClass}">${source}</span></td>
         <td><span class="${accessClass}">${access}</span></td>
         <td class="raw-updated">${escapeHTML(formatUpdatedAt(item.updatedAt))}</td>
       </tr>
     `;
   }).join("");
+}
+
+function rawValueText(item) {
+  if (item.synthetic) {
+    return "-";
+  }
+  if (Array.isArray(item.rawWords) && item.rawWords.length > 1) {
+    return item.rawWords.map((word) => `0x${Number(word).toString(16).padStart(4, "0").toUpperCase()}`).join(" ");
+  }
+  return String(item.raw ?? "-");
 }
 
 function rawSearchText(item) {
@@ -220,6 +233,7 @@ function rawSearchText(item) {
     item.value,
     item.unit,
     item.group,
+    item.synthetic ? "computed calculated derived application" : item.writeOnly ? "control" : "modbus register",
     item.writable ? "read write writable" : "read only",
     String(address),
     `0x${address.toString(16).padStart(4, "0")}`,
@@ -493,7 +507,7 @@ function renderTelemetry(items) {
     "system_energy_losses_total",
     "system_energy_efficiency_total",
   ]);
-  const sensors = items.filter((item) => !item.writable && !hidden.has(item.id));
+  const sensors = items.filter((item) => !item.writable && !item.rawOnly && !hidden.has(item.id));
   els.telemetrySubtitle.textContent = `${sensors.length} sensors`;
   renderTelemetryCards(els.telemetryGrid, sensors, "Waiting for Modbus data.");
 }

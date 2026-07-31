@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/tomasz/srne-inverter-to-mqtt/internal/inverterclock"
 )
 
 type PollGroup string
@@ -27,10 +29,12 @@ const (
 type ValueType string
 
 const (
-	TypeUint16 ValueType = "uint16"
-	TypeInt16  ValueType = "int16"
-	TypeUint32 ValueType = "uint32"
-	TypeInt32  ValueType = "int32"
+	TypeUint16     ValueType = "uint16"
+	TypeInt16      ValueType = "int16"
+	TypeUint32     ValueType = "uint32"
+	TypeInt32      ValueType = "int32"
+	TypeDateTime   ValueType = "datetime"
+	TypePackedTime ValueType = "packed_time"
 )
 
 type WordOrder string
@@ -48,6 +52,7 @@ type Register struct {
 	Type           ValueType
 	WordOrder      WordOrder
 	Synthetic      bool
+	RawOnly        bool
 	Scale          float64
 	Precision      int
 	Unit           string
@@ -77,11 +82,14 @@ type DecodedValue struct {
 	EntityCategory string    `json:"entityCategory,omitempty"`
 	Writable       bool      `json:"writable"`
 	WriteOnly      bool      `json:"writeOnly,omitempty"`
+	Synthetic      bool      `json:"synthetic,omitempty"`
+	RawOnly        bool      `json:"rawOnly,omitempty"`
 	Unit           string    `json:"unit,omitempty"`
 	DeviceClass    string    `json:"deviceClass,omitempty"`
 	StateClass     string    `json:"stateClass,omitempty"`
 	Icon           string    `json:"icon,omitempty"`
 	Raw            int64     `json:"raw"`
+	RawWords       []uint16  `json:"rawWords,omitempty"`
 	Value          any       `json:"value"`
 	Rendered       string    `json:"rendered"`
 	WriteMin       float64   `json:"writeMin,omitempty"`
@@ -151,6 +159,14 @@ func threePhaseCatalog(catalog []Register, includeGridControls bool) []Register 
 	}
 
 	filtered = append(filtered,
+		inverterClockRegister(),
+		timedChargeRegister("timed_charge_slot_1_start", "Timed Utility Charge Slot 1 Start", 0xE026),
+		timedChargeRegister("timed_charge_slot_1_end", "Timed Utility Charge Slot 1 End", 0xE027),
+		timedChargeRegister("timed_charge_slot_2_start", "Timed Utility Charge Slot 2 Start", 0xE028),
+		timedChargeRegister("timed_charge_slot_2_end", "Timed Utility Charge Slot 2 End", 0xE029),
+		timedChargeRegister("timed_charge_slot_3_start", "Timed Utility Charge Slot 3 Start", 0xE02A),
+		timedChargeRegister("timed_charge_slot_3_end", "Timed Utility Charge Slot 3 End", 0xE02B),
+		timedChargeEnabledRegister(),
 		powerSumRegister("pv_power", "PV Power", 0xFFFA, "mdi:white-balance-sunny"),
 		pvVoltageRegister("pv1_voltage", "PV1 Voltage", 0x0107),
 		pvCurrentRegister("pv1_current", "PV1 Current", 0x0108),
@@ -186,6 +202,58 @@ func threePhaseCatalog(catalog []Register, includeGridControls bool) []Register 
 	}
 
 	return filtered
+}
+
+func inverterClockRegister() Register {
+	return Register{
+		ID:             "inverter_clock",
+		Name:           "Inverter Clock",
+		Address:        0x020C,
+		Count:          3,
+		Type:           TypeDateTime,
+		Icon:           "mdi:clock-outline",
+		Component:      "sensor",
+		Group:          GroupSlow,
+		Entity:         "diagnostic",
+		EntityCategory: "diagnostic",
+		RawOnly:        true,
+	}
+}
+
+func timedChargeRegister(id, name string, address uint16) Register {
+	return Register{
+		ID:             id,
+		Name:           name,
+		Address:        address,
+		Count:          1,
+		Type:           TypePackedTime,
+		Icon:           "mdi:clock-outline",
+		Component:      "sensor",
+		Group:          GroupSlow,
+		Entity:         "diagnostic",
+		EntityCategory: "diagnostic",
+		RawOnly:        true,
+	}
+}
+
+func timedChargeEnabledRegister() Register {
+	return Register{
+		ID:             "timed_utility_charging",
+		Name:           "Timed Utility Charging",
+		Address:        0xE02C,
+		Count:          1,
+		Type:           TypeUint16,
+		Icon:           "mdi:battery-clock-outline",
+		Component:      "sensor",
+		Group:          GroupSlow,
+		Entity:         "diagnostic",
+		EntityCategory: "diagnostic",
+		RawOnly:        true,
+		Enum: map[int64]string{
+			0: "Disabled",
+			1: "Enabled",
+		},
+	}
 }
 
 func gridOperatingModeRegister() Register {
@@ -1793,10 +1861,27 @@ func (r Register) Decode(words []uint16, now time.Time) (DecodedValue, error) {
 	var value any
 	var rendered string
 
-	if len(r.Enum) > 0 {
+	switch {
+	case r.Type == TypeDateTime:
+		clock, decodeErr := inverterclock.Decode(words[:r.Count])
+		if decodeErr != nil {
+			return DecodedValue{}, decodeErr
+		}
+		value = clock.Formatted
+		rendered = clock.Formatted
+	case r.Type == TypePackedTime:
+		hour := int(raw >> 8)
+		minute := int(raw & 0xFF)
+		if hour > 23 || minute > 59 {
+			value = fmt.Sprintf("Invalid (%d)", raw)
+		} else {
+			value = fmt.Sprintf("%02d:%02d", hour, minute)
+		}
+		rendered = value.(string)
+	case len(r.Enum) > 0:
 		value = enumValue(r.Enum, raw)
 		rendered = value.(string)
-	} else {
+	default:
 		scaled := float64(raw) * scaleOrOne(r.Scale)
 		if r.Precision == 0 && math.Abs(scaled-math.Round(scaled)) < 0.000001 {
 			rounded := int64(math.Round(scaled))
@@ -1818,11 +1903,14 @@ func (r Register) Decode(words []uint16, now time.Time) (DecodedValue, error) {
 		EntityCategory: r.EntityCategory,
 		Writable:       r.Writable,
 		WriteOnly:      r.WriteOnly,
+		Synthetic:      r.Synthetic,
+		RawOnly:        r.RawOnly,
 		Unit:           r.Unit,
 		DeviceClass:    r.DeviceClass,
 		StateClass:     r.StateClass,
 		Icon:           r.Icon,
 		Raw:            raw,
+		RawWords:       append([]uint16(nil), words[:r.Count]...),
 		Value:          value,
 		Rendered:       rendered,
 		WriteMin:       r.WriteMin,
@@ -1835,7 +1923,7 @@ func (r Register) Decode(words []uint16, now time.Time) (DecodedValue, error) {
 
 func (r Register) rawValue(words []uint16) (int64, error) {
 	switch r.Type {
-	case TypeUint16:
+	case TypeUint16, TypeDateTime, TypePackedTime:
 		return int64(words[0]), nil
 	case TypeInt16:
 		return int64(int16(words[0])), nil
@@ -1881,6 +1969,8 @@ func (r Register) ControlValue(now time.Time) DecodedValue {
 		EntityCategory: r.EntityCategory,
 		Writable:       r.Writable,
 		WriteOnly:      r.WriteOnly,
+		Synthetic:      r.Synthetic,
+		RawOnly:        r.RawOnly,
 		Unit:           r.Unit,
 		DeviceClass:    r.DeviceClass,
 		StateClass:     r.StateClass,

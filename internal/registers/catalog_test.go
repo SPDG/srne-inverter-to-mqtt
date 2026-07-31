@@ -748,3 +748,59 @@ func TestEncodeWriteEnum(t *testing.T) {
 		t.Fatalf("unexpected raw value: got %d want 1", raw)
 	}
 }
+
+func TestSPIH3PCatalogIncludesClockAndTimedChargeRegisters(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		id      string
+		address uint16
+		count   uint16
+		typeID  ValueType
+	}{
+		{id: "inverter_clock", address: 0x020C, count: 3, typeID: TypeDateTime},
+		{id: "timed_charge_slot_1_start", address: 0xE026, count: 1, typeID: TypePackedTime},
+		{id: "timed_charge_slot_1_end", address: 0xE027, count: 1, typeID: TypePackedTime},
+		{id: "timed_charge_slot_2_start", address: 0xE028, count: 1, typeID: TypePackedTime},
+		{id: "timed_charge_slot_2_end", address: 0xE029, count: 1, typeID: TypePackedTime},
+		{id: "timed_charge_slot_3_start", address: 0xE02A, count: 1, typeID: TypePackedTime},
+		{id: "timed_charge_slot_3_end", address: 0xE02B, count: 1, typeID: TypePackedTime},
+		{id: "timed_utility_charging", address: 0xE02C, count: 1, typeID: TypeUint16},
+	}
+
+	for _, tc := range cases {
+		reg, ok := FindByIDForInverterType(tc.id, InverterTypeSPIH3P)
+		if !ok {
+			t.Fatalf("%s not found", tc.id)
+		}
+		if reg.Address != tc.address || reg.Count != tc.count || reg.Type != tc.typeID || !reg.RawOnly {
+			t.Fatalf("%s metadata = %#v", tc.id, reg)
+		}
+	}
+}
+
+func TestDecodeClockPreservesRawWords(t *testing.T) {
+	t.Parallel()
+
+	reg, _ := FindByIDForInverterType("inverter_clock", InverterTypeSPIH3P)
+	value, err := reg.Decode([]uint16{0x1A07, 0x1F12, 0x2A07}, time.Unix(0, 0))
+	if err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	if value.Rendered != "2026-07-31 18:42:07" || len(value.RawWords) != 3 || value.RawWords[2] != 0x2A07 {
+		t.Fatalf("decoded clock = %#v", value)
+	}
+}
+
+func TestDecodePackedTime(t *testing.T) {
+	t.Parallel()
+
+	reg, _ := FindByIDForInverterType("timed_charge_slot_1_end", InverterTypeSPIH3P)
+	value, err := reg.Decode([]uint16{0x173B}, time.Unix(0, 0))
+	if err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	if value.Rendered != "23:59" || value.Raw != 0x173B {
+		t.Fatalf("decoded packed time = %#v", value)
+	}
+}

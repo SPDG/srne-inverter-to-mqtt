@@ -125,12 +125,21 @@ func derivedTelemetry(values []registers.DecodedValue, lastSwitchGrid, lastSwitc
 
 	derived := make([]registers.DecodedValue, 0, 8)
 
+	produced, okProduction := numericValue(index["total_production"])
 	imported, okImport := numericValue(index["total_energy_import"])
 	consumed, okConsumed := numericValue(index["total_load_consumption"])
-	if okImport && okConsumed && imported > 0 {
-		updatedAt := newestUpdatedAt(index["total_energy_import"], index["total_load_consumption"])
-		losses := roundFloat(imported-consumed, 1)
-		efficiency := roundFloat((consumed/imported)*100, 1)
+	exported, okExport := numericValue(index["total_energy_export"])
+	if okProduction && okImport && okConsumed && okExport && produced+imported > 0 {
+		updatedAt := newestUpdatedAt(
+			index["total_production"],
+			index["total_energy_import"],
+			index["total_load_consumption"],
+			index["total_energy_export"],
+		)
+		energyInput := produced + imported
+		energyOutput := consumed + exported
+		losses := roundFloat(energyInput-energyOutput, 1)
+		efficiency := roundFloat((energyOutput/energyInput)*100, 1)
 
 		derived = append(derived,
 			registers.DecodedValue{
@@ -195,6 +204,9 @@ func derivedTelemetry(values []registers.DecodedValue, lastSwitchGrid, lastSwitc
 		"mdi:battery-heart-variant",
 		lastSwitchBatt,
 	)...)
+	for index := range derived {
+		derived[index].Synthetic = true
+	}
 
 	return derived
 }

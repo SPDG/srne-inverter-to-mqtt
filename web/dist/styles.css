@@ -955,7 +955,7 @@ select {
 
 .raw-data-table {
   width: 100%;
-  min-width: 1060px;
+  min-width: 1160px;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 12px;
@@ -1012,13 +1012,30 @@ select {
 }
 
 .raw-group,
-.raw-access {
+.raw-access,
+.raw-source {
   display: inline-flex;
   border: 1px solid #313941;
   border-radius: 999px;
   padding: 3px 7px;
   color: #9eabb8;
   white-space: nowrap;
+}
+
+.raw-source.modbus {
+  border-color: rgba(68, 223, 131, 0.35);
+  color: #68dfa0;
+}
+
+.raw-source.computed {
+  border-color: rgba(242, 189, 98, 0.45);
+  background: rgba(217, 154, 50, 0.08);
+  color: #f2bd62;
+}
+
+.raw-source.control {
+  border-color: rgba(255, 123, 114, 0.4);
+  color: #ff9c96;
 }
 
 .raw-access.writable {
