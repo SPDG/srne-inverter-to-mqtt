@@ -35,6 +35,28 @@
           <section class="hero-grid">
             <div id="power-overview"></div>
             <div class="side-stack">
+              <aside id="storm-live-banner" class="storm-live-banner" aria-live="polite" hidden>
+                <div class="storm-live-icon" aria-hidden="true"></div>
+                <div class="storm-live-summary">
+                  <span>Storm Charge active</span>
+                  <strong><span id="storm-live-current-soc">-</span> <small>&rarr;</small> <span id="storm-live-target-soc">-</span></strong>
+                  <small>Utility charging is managed until the target or safety timeout.</small>
+                </div>
+                <div class="storm-live-metrics">
+                  <div>
+                    <span>Charge limit</span>
+                    <strong id="storm-live-limit">-</strong>
+                    <small id="storm-live-power">-</small>
+                  </div>
+                  <div>
+                    <span>Time remaining</span>
+                    <strong id="storm-live-remaining">-</strong>
+                    <small id="storm-live-deadline">-</small>
+                  </div>
+                </div>
+                <button id="storm-live-cancel" class="action-button storm-cancel storm-live-cancel" type="button">Cancel &amp; restore</button>
+                <div class="storm-live-progress" aria-hidden="true"><span id="storm-live-progress"></span></div>
+              </aside>
               <div id="services" class="service-grid"></div>
               <section class="panel hero-kpi-panel">
                 <div class="panel-header">

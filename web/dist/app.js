@@ -31,6 +31,15 @@ const els = {
   maintenanceSection: document.getElementById("maintenance-section"),
   maintenanceGrid: document.getElementById("maintenance-grid"),
   writeResult: document.getElementById("write-result"),
+  stormLiveBanner: document.getElementById("storm-live-banner"),
+  stormLiveCurrentSOC: document.getElementById("storm-live-current-soc"),
+  stormLiveTargetSOC: document.getElementById("storm-live-target-soc"),
+  stormLiveLimit: document.getElementById("storm-live-limit"),
+  stormLivePower: document.getElementById("storm-live-power"),
+  stormLiveRemaining: document.getElementById("storm-live-remaining"),
+  stormLiveDeadline: document.getElementById("storm-live-deadline"),
+  stormLiveProgress: document.getElementById("storm-live-progress"),
+  stormLiveCancel: document.getElementById("storm-live-cancel"),
   stormChargePanel: document.getElementById("storm-charge-panel"),
   stormChargeBadge: document.getElementById("storm-charge-badge"),
   stormChargeTitle: document.getElementById("storm-charge-title"),
@@ -286,6 +295,8 @@ function renderStormCharge(storm, byId) {
   const currentSOC = Number(storm.currentSoc || byId.battery_soc?.value || 0);
   const phaseLabel = phase.replaceAll("_", " ");
 
+  renderStormLiveBanner(storm, active, settings, currentSOC, voltage);
+
   els.stormChargePanel.classList.toggle("active", active);
   els.stormChargeBadge.className = `status-pill ${active ? "storm-active" : phase === "error" ? "bad" : ""}`;
   els.stormChargeBadge.textContent = phaseLabel;
@@ -315,6 +326,40 @@ function renderStormCharge(storm, byId) {
   els.stormChargeStart.disabled = active;
   els.stormChargeCancel.disabled = !active;
   updateStormPowerPreview();
+}
+
+function renderStormLiveBanner(storm, active, settings, currentSOC, voltage) {
+  if (!els.stormLiveBanner) {
+    return;
+  }
+
+  els.stormLiveBanner.hidden = !active;
+  if (!active) {
+    return;
+  }
+
+  const targetSOC = Number(settings.targetSoc || 0);
+  const currentLimit = Number(settings.maxCurrentA || 0);
+  const estimatedPower = Number(storm.estimatedPowerWatts || Math.round(currentLimit * voltage));
+  const progress = targetSOC > 0 ? Math.min(100, Math.max(0, currentSOC / targetSOC * 100)) : 0;
+  const deadline = storm.deadline ? new Date(storm.deadline) : null;
+
+  els.stormLiveCurrentSOC.textContent = `${fmt.format(currentSOC)}%`;
+  els.stormLiveTargetSOC.textContent = `${fmt.format(targetSOC)}%`;
+  els.stormLiveLimit.textContent = `${fmt.format(currentLimit)} A`;
+  els.stormLivePower.textContent = estimatedPower > 0 ? `about ${fmt.format(estimatedPower)} W` : "Power estimate unavailable";
+  els.stormLiveRemaining.textContent = formatCompactDuration(storm.remaining);
+  els.stormLiveDeadline.textContent = deadline && !Number.isNaN(deadline.getTime())
+    ? `until ${deadline.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+    : "Safety timeout active";
+  els.stormLiveProgress.style.width = `${progress}%`;
+  els.stormLiveCancel.disabled = false;
+  els.stormLiveCancel.textContent = "Cancel & restore";
+}
+
+function formatCompactDuration(value) {
+  const formatted = String(value || "-").replace(/(\d+(?:\.\d+)?(?:h|m|s))/g, "$1 ").trim();
+  return formatted || "-";
 }
 
 function stormPhaseTitle(phase) {
@@ -389,12 +434,21 @@ async function cancelStormCharge() {
     return;
   }
   els.stormChargeResult.textContent = "Cancelling and restoring settings...";
+  if (els.stormLiveCancel) {
+    els.stormLiveCancel.disabled = true;
+    els.stormLiveCancel.textContent = "Cancelling...";
+  }
   try {
     await fetchJSON("/api/v1/storm-charge/cancel", { method: "POST" });
     els.stormChargeResult.textContent = "Storm charge cancelled; previous settings restored.";
     await loadStatus({ forceControls: true });
   } catch (error) {
     els.stormChargeResult.textContent = error.message;
+    if (els.stormLiveCancel) {
+      els.stormLiveCancel.disabled = false;
+      els.stormLiveCancel.textContent = "Retry cancel";
+      els.stormLiveCancel.title = error.message;
+    }
   }
 }
 
@@ -1176,6 +1230,7 @@ async function bootstrap() {
   els.configForm.addEventListener("submit", saveConfig);
   els.stormChargeForm?.addEventListener("submit", startStormCharge);
   els.stormChargeCancel?.addEventListener("click", cancelStormCharge);
+  els.stormLiveCancel?.addEventListener("click", cancelStormCharge);
   els.stormMaxCurrent?.addEventListener("input", updateStormPowerPreview);
   els.rawDataSearch?.addEventListener("input", () => renderRawData());
   els.rawDataClear?.addEventListener("click", () => {

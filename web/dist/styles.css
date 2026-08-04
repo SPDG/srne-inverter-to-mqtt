@@ -230,6 +230,118 @@ select {
   gap: 12px;
 }
 
+.storm-live-banner {
+  position: relative;
+  display: grid;
+  grid-template-columns: 46px minmax(180px, 1fr) minmax(220px, 0.9fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-height: 92px;
+  padding: 15px 18px 18px;
+  overflow: hidden;
+  border: 1px solid #28658d;
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 5% 20%, rgba(52, 170, 244, 0.19), transparent 36%),
+    linear-gradient(115deg, #14232d 0%, #172027 55%, #171b1f 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.storm-live-banner[hidden] {
+  display: none;
+}
+
+.storm-live-icon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #1c8ad7;
+  border-radius: 50%;
+  background: #0d3554;
+  box-shadow: 0 0 20px rgba(52, 170, 244, 0.25);
+}
+
+.storm-live-icon::before {
+  content: "";
+  width: 16px;
+  height: 25px;
+  background: #74c8ff;
+  clip-path: polygon(58% 0, 12% 56%, 47% 56%, 30% 100%, 88% 42%, 54% 42%);
+}
+
+.storm-live-summary {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.storm-live-summary > span,
+.storm-live-metrics span {
+  color: #74c8ff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.storm-live-summary > strong {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 21px;
+  line-height: 1.1;
+}
+
+.storm-live-summary > strong small {
+  color: #44df83;
+  font-size: 15px;
+}
+
+.storm-live-summary > small,
+.storm-live-metrics small {
+  color: #8d9aa8;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.storm-live-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.storm-live-metrics > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding-left: 12px;
+  border-left: 1px solid #2d4b61;
+}
+
+.storm-live-metrics strong {
+  font-size: 15px;
+}
+
+.storm-live-progress {
+  position: absolute;
+  inset: auto 0 0;
+  height: 3px;
+  background: rgba(52, 170, 244, 0.12);
+}
+
+.storm-live-progress span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #34aaf4, #44df83);
+  box-shadow: 0 0 12px rgba(68, 223, 131, 0.4);
+  transition: width 400ms ease;
+}
+
+.storm-live-cancel {
+  align-self: center;
+  white-space: nowrap;
+}
+
 .settings-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -1341,6 +1453,10 @@ code {
   .service-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .storm-live-banner {
+    grid-template-columns: 46px minmax(180px, 1fr) minmax(220px, 0.8fr) auto;
+  }
 }
 
 @media (max-width: 760px) {
@@ -1477,6 +1593,25 @@ code {
   .config-form,
   .storm-charge-form {
     grid-template-columns: 1fr;
+  }
+
+  .storm-live-banner {
+    grid-template-columns: 40px minmax(0, 1fr);
+    padding: 14px 14px 17px;
+  }
+
+  .storm-live-icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .storm-live-metrics {
+    grid-column: 1 / -1;
+  }
+
+  .storm-live-cancel {
+    grid-column: 1 / -1;
+    justify-content: center;
   }
 
   .storm-actions,
