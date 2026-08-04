@@ -189,9 +189,9 @@ func threePhaseCatalog(catalog []Register, includeGridControls bool) []Register 
 		phasePowerRegister("load_power_phase_c", "Load Power Phase C", 0x0233, 1, "mdi:home-lightning-bolt-outline"),
 		phaseCurrentRegister("grid_current_phase_b", "Grid Current Phase B", 0x0238),
 		phaseCurrentRegister("grid_current_phase_c", "Grid Current Phase C", 0x0239),
-		phasePowerRegister("grid_power_phase_a", "Grid Power Phase A", 0x023A, -1, "mdi:transmission-tower"),
-		phasePowerRegister("grid_power_phase_b", "Grid Power Phase B", 0x023B, -1, "mdi:transmission-tower"),
-		phasePowerRegister("grid_power_phase_c", "Grid Power Phase C", 0x023C, -1, "mdi:transmission-tower"),
+		phasePowerRegister("grid_power_phase_a", "Grid Power Phase A", 0x023A, 1, "mdi:transmission-tower"),
+		phasePowerRegister("grid_power_phase_b", "Grid Power Phase B", 0x023B, 1, "mdi:transmission-tower"),
+		phasePowerRegister("grid_power_phase_c", "Grid Power Phase C", 0x023C, 1, "mdi:transmission-tower"),
 	)
 	if includeGridControls {
 		filtered = append(filtered,

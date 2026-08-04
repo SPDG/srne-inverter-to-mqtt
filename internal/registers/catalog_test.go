@@ -108,6 +108,33 @@ func TestThreePhaseCatalogReplacesSinglePhasePowerRegisters(t *testing.T) {
 	}
 }
 
+func TestThreePhaseGridPowerUsesPositiveImportDirection(t *testing.T) {
+	t.Parallel()
+
+	for _, inverterType := range []string{InverterTypeSPIH3P, InverterTypeHESPSH3} {
+		reg, ok := FindByIDForInverterType("grid_power_phase_a", inverterType)
+		if !ok {
+			t.Fatalf("grid_power_phase_a not found for %s", inverterType)
+		}
+
+		imported, err := reg.Decode([]uint16{735}, time.Unix(0, 0))
+		if err != nil {
+			t.Fatalf("Decode(import) for %s error = %v", inverterType, err)
+		}
+		if got, ok := imported.Value.(int64); !ok || got != 735 {
+			t.Fatalf("import value for %s = %#v, want 735", inverterType, imported.Value)
+		}
+
+		exported, err := reg.Decode([]uint16{0xFD21}, time.Unix(0, 0))
+		if err != nil {
+			t.Fatalf("Decode(export) for %s error = %v", inverterType, err)
+		}
+		if got, ok := exported.Value.(int64); !ok || got != -735 {
+			t.Fatalf("export value for %s = %#v, want -735", inverterType, exported.Value)
+		}
+	}
+}
+
 func TestGridOperatingModeIsWritableOnlyForHESPProfile(t *testing.T) {
 	t.Parallel()
 

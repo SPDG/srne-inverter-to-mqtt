@@ -40,6 +40,16 @@ The application exposes these controls only for the `hesp_sh3` profile. They
 are intentionally hidden for `spi_h3p`, even when the shared firmware responds
 at the same register addresses.
 
+### Grid Power Direction
+
+The signed phase power registers `0x023A-0x023C` use positive values for power
+imported from utility and negative values for power flowing toward the grid.
+This follows the SRNE Modbus protocol definition and was confirmed live on
+`srne-002` during Storm Charge on 2026-08-04: positive raw values on all three
+phases coincided with battery charging and utility consumption. The synthetic
+`grid_power` sensor is the signed sum of these three phase values and uses the
+same direction convention.
+
 ## Utility Bypass and Recovery Charging
 
 Utility bypass is separate from grid-connected export. The desired operating
